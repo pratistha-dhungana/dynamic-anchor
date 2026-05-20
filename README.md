@@ -9,7 +9,7 @@ https://dynamic-anchor.vercel.app/
 
 
 ## Why I Built This
-
+ 
 A common problem with productivity apps is that they capture tasks but do not help users realistically plan when those tasks should happen. Dynamic Anchor solves this by combining task intake, priority scoring, time estimates, and schedule generation into one workflow.
 
 This project was designed to demonstrate the type of work required in client-facing technical roles: translating an ambiguous user problem into product requirements, designing a usable workflow, integrating backend services, and deploying a working application.
