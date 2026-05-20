@@ -4,9 +4,9 @@ Dynamic Anchor is a React + Vite productivity scheduler that helps users turn me
 
 The project was built as a portfolio-ready full-stack application focused on product thinking, user onboarding, authentication, persistence, and deployment.
 
-## Live Demo
+## Link:
+https://dynamic-anchor.vercel.app/ 
 
-[link after deployed]
 
 ## Why I Built This
 

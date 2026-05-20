@@ -110,6 +110,16 @@ function formatDue(task: Task) {
   return `${task.dueDate}${task.dueTime ? ` ${formatClockTime(task.dueTime)}` : ''}`;
 }
 
+function shouldOfferPlanningOptions(task: Task) {
+  const now = new Date();
+  const due = parseISO(`${task.dueDate}T${task.dueTime || '23:59'}:00`);
+  return task.importance === 'important' && isAfter(startOfDay(due), startOfDay(now)) && isAfter(due, now);
+}
+
+function getAuthRedirectUrl() {
+  return `${window.location.origin}/`;
+}
+
 const timeOptions = Array.from({ length: 96 }, (_, index) => {
   const minutes = index * 15;
   const value = toTimeInputValue(minutes);
@@ -146,6 +156,7 @@ function App() {
   const [selectedDate, setSelectedDate] = useState(() => toDateInputValue(new Date()));
   const [eventError, setEventError] = useState('');
   const [scheduleAlert, setScheduleAlert] = useState<ScheduleAlert | null>(null);
+  const [dismissedScheduleAlerts, setDismissedScheduleAlerts] = useState<string[]>([]);
 
   const displayName = profile?.nickname || profile?.firstName || getFirstName(session);
   const selectedDateObject = parseISO(`${selectedDate}T00:00:00`);
@@ -248,11 +259,11 @@ function App() {
       ? scheduledTasksNext.find((task) => task.id === watchedTaskId)
       : scheduledTasksNext.find((task) => task.status === 'pending' && task.importance === 'important');
 
-    if (!watchedTask || watchedTask.status !== 'pending') return;
+    if (!watchedTask || watchedTask.status !== 'pending' || dismissedScheduleAlerts.includes(watchedTask.id)) return;
 
     setScheduleAlert({
       taskId: watchedTask.id,
-      type: watchedTask.importance === 'important' ? 'high-priority' : 'no-time',
+      type: shouldOfferPlanningOptions(watchedTask) ? 'high-priority' : 'no-time',
     });
   }
 
@@ -277,6 +288,7 @@ function App() {
       createdAt: new Date().toISOString(),
     };
 
+    setDismissedScheduleAlerts((taskIds) => taskIds.filter((taskId) => taskId !== task.id));
     const nextData = { ...data, tasks: [...data.tasks, task] };
     applySchedule(nextData, task.id);
     setTaskForm({ ...emptyTask, dueDate: taskForm.dueDate });
@@ -290,6 +302,7 @@ function App() {
 
   function saveEditedTask() {
     if (!editingTask || !editForm.title.trim()) return;
+    const editingTaskId = editingTask.id;
 
     const nextData = {
       ...data,
@@ -313,7 +326,8 @@ function App() {
       ),
     };
 
-    applySchedule(nextData, editingTask.id);
+    setDismissedScheduleAlerts((taskIds) => taskIds.filter((taskId) => taskId !== editingTaskId));
+    applySchedule(nextData, editingTaskId);
     setEditingTask(null);
   }
 
@@ -376,7 +390,17 @@ function App() {
       ),
     };
 
+    setDismissedScheduleAlerts((taskIds) => taskIds.filter((dismissedTaskId) => dismissedTaskId !== taskId));
     applySchedule(nextData, taskId);
+  }
+
+  function dismissScheduleAlert() {
+    if (scheduleAlert) {
+      setDismissedScheduleAlerts((taskIds) =>
+        taskIds.includes(scheduleAlert.taskId) ? taskIds : [...taskIds, scheduleAlert.taskId],
+      );
+    }
+    setScheduleAlert(null);
   }
 
   function adjustWakeEarlier(taskId: string) {
@@ -452,7 +476,7 @@ function App() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: window.location.origin,
+        redirectTo: getAuthRedirectUrl(),
       },
     });
     if (error) setAuthMessage(error.message);
@@ -508,7 +532,7 @@ function App() {
         <ScheduleAlertModal
           alert={scheduleAlert}
           task={data.tasks.find((task) => task.id === scheduleAlert.taskId)}
-          onClose={() => setScheduleAlert(null)}
+          onClose={dismissScheduleAlert}
           onDropLowPriority={moveLowPriorityToTomorrow}
           onSleepLater={adjustSleepLater}
           onWakeEarlier={adjustWakeEarlier}
@@ -808,12 +832,9 @@ function TaskView({
             />
           </label>
           <div className="grid gap-3 sm:grid-cols-3">
-            <Input
-              label="Estimated minutes"
-              min={5}
-              type="number"
-              value={String(form.estimateMinutes)}
-              onChange={(estimateMinutes) => onFormChange({ ...form, estimateMinutes: Number(estimateMinutes) })}
+            <EstimatedTimeInput
+              value={form.estimateMinutes}
+              onChange={(estimateMinutes) => onFormChange({ ...form, estimateMinutes })}
             />
             <Input label="Deadline date" type="date" value={form.dueDate} onChange={(dueDate) => onFormChange({ ...form, dueDate })} />
             <TimeSelect label="Deadline time" value={form.dueTime} onChange={(dueTime) => onFormChange({ ...form, dueTime })} />
@@ -1101,6 +1122,59 @@ function TimeSelect({
   );
 }
 
+function EstimatedTimeInput({
+  onChange,
+  value,
+}: {
+  onChange: (value: number) => void;
+  value: number;
+}) {
+  const hours = Math.floor(value / 60);
+  const minutes = value % 60;
+
+  function updateEstimate(nextHours: number, nextMinutes: number) {
+    const total = Math.max(5, nextHours * 60 + nextMinutes);
+    onChange(total);
+  }
+
+  return (
+    <div className="field">
+      <span>Estimated time</span>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="sr-only" htmlFor="estimate-hours">
+          Hours
+        </label>
+        <input
+          className="input"
+          id="estimate-hours"
+          min={0}
+          type="number"
+          value={String(hours)}
+          onChange={(event) => updateEstimate(Number(event.target.value), minutes)}
+        />
+        <label className="sr-only" htmlFor="estimate-minutes">
+          Minutes
+        </label>
+        <select
+          className="input"
+          id="estimate-minutes"
+          value={String(minutes)}
+          onChange={(event) => updateEstimate(hours, Number(event.target.value))}
+        >
+          {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map((minuteOption) => (
+            <option key={minuteOption} value={minuteOption}>
+              {minuteOption} min
+            </option>
+          ))}
+        </select>
+      </div>
+      <span className="text-xs font-medium text-zinc-500">
+        {hours} hr {minutes} min
+      </span>
+    </div>
+  );
+}
+
 function GuestNudge({ onClose, onSignIn }: { onClose: () => void; onSignIn: () => void }) {
   return (
     <div className="modal-backdrop">
@@ -1178,12 +1252,12 @@ function ScheduleAlertModal({
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="text-xl font-bold text-white">
-              {isHighPriority ? 'This priority needs more room' : "Uh oh, there's no other time."}
+              {isHighPriority ? 'This priority needs more room' : "Can't fit in schedule."}
             </h2>
             <p className="mt-2 text-sm leading-6 text-zinc-300">
               {isHighPriority
                 ? `${task?.title || 'This high priority task'} cannot fit before its deadline with the current routine and events.`
-                : `${task?.title || 'This activity'} cannot be refit into the remaining available schedule.`}
+                : `${task?.title || 'This activity'} cannot fit into the remaining available time before its deadline.`}
             </p>
           </div>
           <button className="icon-action" title="Close" onClick={onClose}>
@@ -1192,7 +1266,8 @@ function ScheduleAlertModal({
         </div>
 
         {isHighPriority ? (
-          <div className="mt-5 grid gap-2">
+          <div className="mt-5 grid gap-2 rounded-lg border border-line bg-white/[0.03] p-3">
+            <p className="text-sm text-zinc-300">Since this is future planning, you can make more room:</p>
             <button className="btn-primary justify-center" onClick={() => onWakeEarlier(alert.taskId)}>
               Wake up 1 hour earlier
             </button>
@@ -1250,12 +1325,9 @@ function TaskEditModal({
             />
           </label>
           <div className="grid gap-3 sm:grid-cols-3">
-            <Input
-              label="Estimated minutes"
-              min={5}
-              type="number"
-              value={String(form.estimateMinutes)}
-              onChange={(estimateMinutes) => onChange({ ...form, estimateMinutes: Number(estimateMinutes) })}
+            <EstimatedTimeInput
+              value={form.estimateMinutes}
+              onChange={(estimateMinutes) => onChange({ ...form, estimateMinutes })}
             />
             <Input label="Deadline date" type="date" value={form.dueDate} onChange={(dueDate) => onChange({ ...form, dueDate })} />
             <TimeSelect label="Deadline time" value={form.dueTime} onChange={(dueTime) => onChange({ ...form, dueTime })} />
