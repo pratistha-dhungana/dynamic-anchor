@@ -11,6 +11,16 @@ export type EisenhowerCategory =
 export interface Routine {
   wakeTime: string;
   sleepTime: string;
+  restMinutes?: number;
+}
+
+export interface RoutineEvent {
+  id: string;
+  title: string;
+  daysOfWeek: number[];
+  startTime: string;
+  endTime: string;
+  location?: string;
 }
 
 export interface WeeklyEvent {
@@ -50,6 +60,7 @@ export interface Profile {
 
 export interface AppData {
   routine: Routine;
+  routineEvents?: RoutineEvent[];
   events: WeeklyEvent[];
   tasks: Task[];
 }

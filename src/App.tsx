@@ -22,7 +22,7 @@ import { loadCloudData, loadProfile, saveCloudData, saveProfile } from './lib/db
 import { buildWeeklySchedule, formatDateTime, formatDuration, getCategory } from './lib/schedule';
 import { defaultData, loadLocalData, loadLocalProfile, saveLocalData, saveLocalProfile } from './lib/storage';
 import { isSupabaseConfigured, supabase } from './lib/supabase';
-import type { AppData, EisenhowerCategory, ImportanceLevel, Profile, Task, UrgencyLevel, WeeklyEvent } from './types';
+import type { AppData, EisenhowerCategory, ImportanceLevel, Profile, RoutineEvent, Task, UrgencyLevel, WeeklyEvent } from './types';
 
 type TabId = 'schedule' | 'tasks' | 'routine' | 'matrix';
 type ScheduleAlert =
@@ -69,6 +69,24 @@ const emptyEvent = {
   location: '',
 };
 
+const emptyRoutineEvent = {
+  title: '',
+  daysOfWeek: [1, 3, 5],
+  startTime: '18:00',
+  endTime: '19:00',
+  location: '',
+};
+
+const weekdayOptions = [
+  { value: 0, label: 'Sun' },
+  { value: 1, label: 'Mon' },
+  { value: 2, label: 'Tue' },
+  { value: 3, label: 'Wed' },
+  { value: 4, label: 'Thu' },
+  { value: 5, label: 'Fri' },
+  { value: 6, label: 'Sat' },
+];
+
 function makeId() {
   return crypto.randomUUID();
 }
@@ -96,6 +114,22 @@ function rangesOverlap(start: Date, end: Date, blockStart: Date, blockEnd: Date)
 }
 
 function findScheduleConflict(data: AppData, start: Date, end: Date) {
+  const routineConflict = (data.routineEvents || []).find((event) => {
+    if (!event.daysOfWeek.includes(start.getDay())) return false;
+    const eventStart = dateWithTime(start, event.startTime);
+    const eventEnd = dateWithTime(start, event.endTime);
+    return rangesOverlap(start, end, eventStart, eventEnd);
+  });
+
+  if (routineConflict) {
+    const eventStart = dateWithTime(start, routineConflict.startTime);
+    const eventEnd = dateWithTime(start, routineConflict.endTime);
+    return {
+      title: routineConflict.title,
+      range: `${format(eventStart, 'h:mm a')}-${format(eventEnd, 'h:mm a')}`,
+    };
+  }
+
   const eventConflict = data.events.find((event) => {
     const eventStart = dateWithTime(parseISO(`${event.date}T00:00:00`), event.startTime);
     const eventEnd = dateWithTime(parseISO(`${event.date}T00:00:00`), event.endTime);
@@ -124,6 +158,17 @@ function findScheduleConflict(data: AppData, start: Date, end: Date) {
   }
 
   return null;
+}
+
+function routineEventInstance(event: RoutineEvent, date: Date): WeeklyEvent {
+  return {
+    id: `routine-${event.id}-${format(date, 'yyyy-MM-dd')}`,
+    title: event.title,
+    date: format(date, 'yyyy-MM-dd'),
+    startTime: event.startTime,
+    endTime: event.endTime,
+    location: event.location,
+  };
 }
 
 function toDateInputValue(date: Date) {
@@ -274,7 +319,14 @@ function App() {
 
       setProfile(nextProfile);
       saveLocalProfile(nextProfile);
-      if (remoteData) setData({ ...defaultData, ...remoteData });
+      if (remoteData) {
+        setData({
+          ...defaultData,
+          ...remoteData,
+          routine: { ...defaultData.routine, ...remoteData.routine },
+          routineEvents: remoteData.routineEvents || [],
+        });
+      }
       setCloudLoaded(true);
     }
 
@@ -325,7 +377,23 @@ function App() {
   }
 
   function refitSchedule() {
-    applySchedule(data);
+    const nextData = {
+      ...data,
+      tasks: data.tasks.map((task) =>
+        task.status !== 'complete' &&
+        task.scheduledStart &&
+        isSameDay(parseISO(task.scheduledStart), selectedDateObject)
+          ? {
+              ...task,
+              dueDate: selectedDate,
+              status: 'incomplete' as const,
+              scheduledStart: undefined,
+              scheduledEnd: undefined,
+            }
+          : task,
+      ),
+    };
+    applySchedule(nextData);
   }
 
   function addTaskFromForm(form: typeof emptyTask) {
@@ -545,13 +613,14 @@ function App() {
     applySchedule(nextData, taskId);
   }
 
-  function markIncomplete(taskId: string) {
+  function markIncomplete(taskId: string, refitDate?: string) {
     const nextData = {
       ...data,
       tasks: data.tasks.map((task) =>
         task.id === taskId
           ? {
               ...task,
+              dueDate: refitDate || task.dueDate,
               status: 'incomplete' as const,
               scheduledStart: undefined,
               scheduledEnd: undefined,
@@ -787,6 +856,7 @@ function App() {
             onToggleEventComplete={toggleEventComplete}
             pastDueTasks={pastDueTasks}
             routine={data.routine}
+            routineEvents={data.routineEvents || []}
             selectedCompletedTasks={selectedCompletedTasks}
             selectedDate={selectedDate}
             selectedScheduledTasks={selectedScheduledTasks}
@@ -834,6 +904,7 @@ function ScheduleView({
   onToggleEventComplete,
   pastDueTasks,
   routine,
+  routineEvents,
   selectedCompletedTasks,
   selectedDate,
   selectedScheduledTasks,
@@ -844,12 +915,13 @@ function ScheduleView({
   onComplete: (taskId: string) => void;
   onDelete: (taskId: string) => void;
   onDeleteEvent: (eventId: string) => void;
-  onIncomplete: (taskId: string) => void;
+  onIncomplete: (taskId: string, refitDate: string) => void;
   onOpenEventModal: (date: string, startTime: string) => void;
   onRefitPastDue: (taskId: string, date: string) => void;
   onToggleEventComplete: (eventId: string) => void;
   pastDueTasks: Task[];
   routine: AppData['routine'];
+  routineEvents: RoutineEvent[];
   selectedCompletedTasks: Task[];
   selectedDate: string;
   selectedScheduledTasks: Task[];
@@ -861,7 +933,13 @@ function ScheduleView({
   const sleep = dateWithTime(visibleDate, routine.sleepTime);
   const hourCount = Math.max(1, Math.ceil((sleep.getTime() - wake.getTime()) / 3_600_000));
   const hours = Array.from({ length: hourCount }, (_, index) => addHours(wake, index));
-  const selectedEvents = events.filter((event) => isSameDay(parseISO(`${event.date}T00:00:00`), visibleDate));
+  const selectedRoutineEvents = routineEvents
+    .filter((event) => event.daysOfWeek.includes(visibleDate.getDay()))
+    .map((event) => routineEventInstance(event, visibleDate));
+  const selectedEvents = [
+    ...events.filter((event) => isSameDay(parseISO(`${event.date}T00:00:00`), visibleDate)),
+    ...selectedRoutineEvents,
+  ];
   const selectedUpcomingEvents = selectedEvents.filter((event) => !event.completed);
   const selectedCompletedEvents = selectedEvents.filter((event) => event.completed);
   const selectedOpenScheduledTasks = selectedScheduledTasks.filter((task) => task.status !== 'complete');
@@ -891,17 +969,27 @@ function ScheduleView({
         <div className="mt-5 grid gap-2">
           {hours.map((hour) => {
             const nextHour = addHours(hour, 1);
-            const hourTasks = selectedScheduledTasks.filter((task) => {
+            const overlappingTasks = selectedScheduledTasks.filter((task) => {
               if (!task.scheduledStart || !task.scheduledEnd) return false;
               const start = parseISO(task.scheduledStart);
               const end = parseISO(task.scheduledEnd);
               return rangesOverlap(start, end, hour, nextHour);
             });
-            const hourEvents = selectedEvents.filter((event) => {
+            const hourTasks = overlappingTasks.filter((task) => {
+              if (!task.scheduledStart) return false;
+              const start = parseISO(task.scheduledStart);
+              return start >= hour && start < nextHour;
+            });
+            const overlappingEvents = selectedEvents.filter((event) => {
               const start = dateWithTime(parseISO(`${event.date}T00:00:00`), event.startTime);
               const end = dateWithTime(parseISO(`${event.date}T00:00:00`), event.endTime);
               return rangesOverlap(start, end, hour, nextHour);
             });
+            const hourEvents = overlappingEvents.filter((event) => {
+              const start = dateWithTime(parseISO(`${event.date}T00:00:00`), event.startTime);
+              return start >= hour && start < nextHour;
+            });
+            const isBlockedByEarlierItem = Boolean(overlappingTasks.length || overlappingEvents.length) && !hourTasks.length && !hourEvents.length;
             const routineMarkers = [
               { id: 'wake', label: 'Wake up', time: routine.wakeTime },
               { id: 'sleep', label: 'Sleep', time: routine.sleepTime },
@@ -920,26 +1008,42 @@ function ScheduleView({
                       <div className="text-xs text-zinc-600">{formatClockTime(marker.time)}</div>
                     </div>
                   ))}
-                  {hourEvents.map((event) => (
-                    <div className="flex items-start justify-between gap-3 rounded-lg border border-indigo bg-night p-3" key={event.id}>
-                      <div className={event.completed ? 'line-through decoration-flame decoration-2' : ''}>
-                        <div className="font-semibold text-zinc-900">{event.title}</div>
-                        <div className="text-xs text-zinc-600">
-                          {formatClockTime(event.startTime)}-{formatClockTime(event.endTime)}
+                  {hourEvents.map((event) => {
+                    const start = dateWithTime(parseISO(`${event.date}T00:00:00`), event.startTime);
+                    const end = dateWithTime(parseISO(`${event.date}T00:00:00`), event.endTime);
+                    const durationHeight = Math.max(44, Math.min(180, ((end.getTime() - start.getTime()) / 60_000) * 2));
+
+                    return (
+                      <div
+                        className="flex items-start justify-between gap-3 rounded-lg border border-indigo bg-night p-3"
+                        key={event.id}
+                        style={{ minHeight: `${durationHeight}px` }}
+                      >
+                        <div className={event.completed ? 'line-through decoration-flame decoration-2' : ''}>
+                          <div className="font-semibold text-zinc-900">{event.title}</div>
+                          <div className="text-xs text-zinc-600">
+                            {formatClockTime(event.startTime)}-{formatClockTime(event.endTime)}
+                          </div>
+                        </div>
+                        <div className="flex shrink-0 gap-2">
+                          {event.id.startsWith('routine-') ? (
+                            <span className="chip">routine</span>
+                          ) : (
+                            <>
+                              <button className="icon-action" title="Mark event complete" onClick={() => onToggleEventComplete(event.id)}>
+                                <Check className="h-4 w-4" />
+                              </button>
+                              {!event.completed ? (
+                                <button className="icon-action text-flame hover:border-flame hover:text-flame" title="Delete event" onClick={() => onDeleteEvent(event.id)}>
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              ) : null}
+                            </>
+                          )}
                         </div>
                       </div>
-                      <div className="flex shrink-0 gap-2">
-                        <button className="icon-action" title="Mark event complete" onClick={() => onToggleEventComplete(event.id)}>
-                          <Check className="h-4 w-4" />
-                        </button>
-                        {!event.completed ? (
-                          <button className="icon-action text-flame hover:border-flame hover:text-flame" title="Delete event" onClick={() => onDeleteEvent(event.id)}>
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        ) : null}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                   {hourTasks.map((task) => (
                     <TimelineTaskBlock
                       key={task.id}
@@ -949,7 +1053,7 @@ function ScheduleView({
                           <button className="icon-action" title="Mark complete" onClick={() => onComplete(task.id)}>
                             <Check className="h-4 w-4" />
                           </button>
-                          <button className="icon-action" title="Refit as incomplete" onClick={() => onIncomplete(task.id)}>
+                          <button className="icon-action" title="Refit as incomplete" onClick={() => onIncomplete(task.id, selectedDate)}>
                             <RefreshCw className="h-4 w-4" />
                           </button>
                           {task.status !== 'complete' ? (
@@ -961,7 +1065,7 @@ function ScheduleView({
                       }
                     />
                   ))}
-                  {!hourTasks.length && !hourEvents.length && !routineMarkers.length ? (
+                  {!hourTasks.length && !hourEvents.length && !routineMarkers.length && !isBlockedByEarlierItem ? (
                     <button className="timeline-empty text-left" onDoubleClick={() => onOpenEventModal(selectedDate, format(hour, 'HH:mm'))}>
                       Open focus time
                     </button>
@@ -1107,9 +1211,13 @@ function EventSummaryList({ events, onDeleteEvent }: { events: WeeklyEvent[]; on
                 {formatClockTime(event.startTime)}-{formatClockTime(event.endTime)}
               </div>
             </div>
-            <button className="icon-action text-flame hover:border-flame hover:text-flame" title="Delete event" onClick={() => onDeleteEvent(event.id)}>
-              <Trash2 className="h-4 w-4" />
-            </button>
+            {event.id.startsWith('routine-') ? (
+              <span className="chip">routine</span>
+            ) : (
+              <button className="icon-action text-flame hover:border-flame hover:text-flame" title="Delete event" onClick={() => onDeleteEvent(event.id)}>
+                <Trash2 className="h-4 w-4" />
+              </button>
+            )}
           </div>
         ))}
         {!events.length ? <div className="text-sm text-zinc-500">No events on this date.</div> : null}
@@ -1234,6 +1342,9 @@ function RoutineView({
   onDataChange: (data: AppData) => void;
 }) {
   const [routineDraft, setRoutineDraft] = useState(data.routine);
+  const [routineEventDraft, setRoutineEventDraft] = useState(emptyRoutineEvent);
+  const [routineEventError, setRoutineEventError] = useState('');
+  const [savedMessage, setSavedMessage] = useState('');
 
   useEffect(() => {
     setRoutineDraft(data.routine);
@@ -1242,10 +1353,58 @@ function RoutineView({
   function saveRoutine() {
     const nextData = { ...data, routine: routineDraft };
     onDataChange({ ...nextData, tasks: buildWeeklySchedule(nextData) });
+    setSavedMessage('Routine saved.');
+    window.setTimeout(() => setSavedMessage(''), 2200);
+  }
+
+  function addRoutineEvent() {
+    if (!routineEventDraft.title.trim()) return;
+
+    const start = dateWithTime(new Date(), routineEventDraft.startTime);
+    const end = dateWithTime(new Date(), routineEventDraft.endTime);
+    if (!isAfter(end, start)) {
+      setRoutineEventError('The end time needs to be after the start time.');
+      return;
+    }
+    if (!routineEventDraft.daysOfWeek.length) {
+      setRoutineEventError('Choose at least one day.');
+      return;
+    }
+
+    const nextRoutineEvent: RoutineEvent = {
+      id: makeId(),
+      title: routineEventDraft.title.trim(),
+      daysOfWeek: routineEventDraft.daysOfWeek,
+      startTime: routineEventDraft.startTime,
+      endTime: routineEventDraft.endTime,
+      location: routineEventDraft.location.trim(),
+    };
+    const nextData = { ...data, routineEvents: [...(data.routineEvents || []), nextRoutineEvent] };
+    onDataChange({ ...nextData, tasks: buildWeeklySchedule(nextData) });
+    setRoutineEventDraft(emptyRoutineEvent);
+    setRoutineEventError('');
+    setSavedMessage('Routine event added.');
+    window.setTimeout(() => setSavedMessage(''), 2200);
+  }
+
+  function deleteRoutineEvent(eventId: string) {
+    const nextData = { ...data, routineEvents: (data.routineEvents || []).filter((event) => event.id !== eventId) };
+    onDataChange({ ...nextData, tasks: buildWeeklySchedule(nextData) });
+    setSavedMessage('Routine event removed.');
+    window.setTimeout(() => setSavedMessage(''), 2200);
+  }
+
+  function toggleRoutineDay(day: number) {
+    const daysOfWeek = routineEventDraft.daysOfWeek.includes(day)
+      ? routineEventDraft.daysOfWeek.filter((item) => item !== day)
+      : [...routineEventDraft.daysOfWeek, day].sort((a, b) => a - b);
+    setRoutineEventDraft({ ...routineEventDraft, daysOfWeek });
   }
 
   const hasRoutineChanges =
-    routineDraft.wakeTime !== data.routine.wakeTime || routineDraft.sleepTime !== data.routine.sleepTime;
+    routineDraft.wakeTime !== data.routine.wakeTime ||
+    routineDraft.sleepTime !== data.routine.sleepTime ||
+    (routineDraft.restMinutes ?? 15) !== (data.routine.restMinutes ?? 15);
 
   return (
     <section className="grid gap-4 lg:grid-cols-[0.85fr_1.15fr]">
@@ -1256,32 +1415,78 @@ function RoutineView({
             <TimeSelect label="Wake-up time" value={routineDraft.wakeTime} onChange={(wakeTime) => setRoutineDraft({ ...routineDraft, wakeTime })} />
             <TimeSelect label="Sleep time" value={routineDraft.sleepTime} onChange={(sleepTime) => setRoutineDraft({ ...routineDraft, sleepTime })} />
           </div>
+          <label className="field">
+            Rest between tasks/events
+            <select
+              className="input"
+              value={routineDraft.restMinutes ?? 15}
+              onChange={(event) => setRoutineDraft({ ...routineDraft, restMinutes: Number(event.target.value) })}
+            >
+              <option value={15}>15 minutes</option>
+              <option value={20}>20 minutes</option>
+              <option value={30}>30 minutes</option>
+              <option value={45}>45 minutes</option>
+            </select>
+          </label>
           <button className="btn-primary w-full justify-center" disabled={!hasRoutineChanges} onClick={saveRoutine}>
             Save routine
           </button>
+          {savedMessage ? <p className="rounded-lg border border-hibiscus bg-baby px-3 py-2 text-sm font-semibold text-zinc-900">{savedMessage}</p> : null}
           {hasRoutineChanges ? <p className="text-sm text-zinc-500">Press save to update the schedule.</p> : null}
         </div>
       </div>
 
       <div className="panel">
-        <SectionTitle eyebrow="Fixed Time" title={`${data.events.length} events this week`} />
+        <SectionTitle eyebrow="Recurring Routine" title={`${(data.routineEvents || []).length} repeating blocks`} />
         <div className="mt-5 grid gap-3">
-          {data.events
-            .sort((a, b) => `${a.date}${a.startTime}`.localeCompare(`${b.date}${b.startTime}`))
+          <div className="rounded-lg border border-line bg-panel p-3">
+            <div className="grid gap-3">
+              <Input label="Routine event" value={routineEventDraft.title} onChange={(title) => setRoutineEventDraft({ ...routineEventDraft, title })} />
+              <div className="grid gap-3 sm:grid-cols-2">
+                <TimeSelect label="Start" value={routineEventDraft.startTime} onChange={(startTime) => setRoutineEventDraft({ ...routineEventDraft, startTime })} />
+                <TimeSelect label="End" value={routineEventDraft.endTime} onChange={(endTime) => setRoutineEventDraft({ ...routineEventDraft, endTime })} />
+              </div>
+              <Input label="Location or note" value={routineEventDraft.location} onChange={(location) => setRoutineEventDraft({ ...routineEventDraft, location })} />
+              <div className="flex flex-wrap gap-2">
+                {weekdayOptions.map((day) => (
+                  <button
+                    className={`rounded-lg border px-3 py-2 text-sm font-semibold ${
+                      routineEventDraft.daysOfWeek.includes(day.value)
+                        ? 'border-hibiscus bg-baby text-zinc-950'
+                        : 'border-line bg-night text-zinc-700 hover:border-hibiscus hover:bg-baby'
+                    }`}
+                    key={day.value}
+                    onClick={() => toggleRoutineDay(day.value)}
+                  >
+                    {day.label}
+                  </button>
+                ))}
+              </div>
+              {routineEventError ? <p className="text-sm font-medium text-flame">{routineEventError}</p> : null}
+              <button className="btn-primary justify-center" onClick={addRoutineEvent}>
+                Add recurring routine
+              </button>
+            </div>
+          </div>
+
+          {(data.routineEvents || [])
+            .sort((a, b) => `${a.daysOfWeek.join('')}${a.startTime}`.localeCompare(`${b.daysOfWeek.join('')}${b.startTime}`))
             .map((event) => (
               <div className="flex items-center justify-between gap-3 rounded-lg border border-aura bg-panel p-4" key={event.id}>
                 <div>
                   <h3 className="font-semibold text-zinc-900">{event.title}</h3>
                   <p className="mt-1 text-sm text-zinc-500">
-                    {format(parseISO(`${event.date}T00:00:00`), 'EEE, MMM d')} • {formatClockTime(event.startTime)}-
+                    {event.daysOfWeek.map((day) => weekdayOptions.find((option) => option.value === day)?.label).join(', ')} • {formatClockTime(event.startTime)}-
                     {formatClockTime(event.endTime)}
                     {event.location ? ` • ${event.location}` : ''}
                   </p>
                 </div>
-                <ChevronRight className="h-4 w-4 text-blush" />
+                <button className="icon-action text-flame hover:border-flame hover:text-flame" title="Delete recurring routine" onClick={() => deleteRoutineEvent(event.id)}>
+                  <Trash2 className="h-4 w-4" />
+                </button>
               </div>
             ))}
-          {!data.events.length ? <EmptyState text="Block the commitments your schedule has to respect." /> : null}
+          {!(data.routineEvents || []).length ? <EmptyState text="Add repeating commitments like gym, practice, or commute blocks." /> : null}
         </div>
       </div>
     </section>

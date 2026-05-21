@@ -10,7 +10,7 @@ import {
   parseISO,
   startOfDay,
 } from 'date-fns';
-import type { AppData, EisenhowerCategory, ImportanceLevel, Task, UrgencyLevel, WeeklyEvent } from '../types';
+import type { AppData, EisenhowerCategory, ImportanceLevel, RoutineEvent, Task, UrgencyLevel, WeeklyEvent } from '../types';
 
 export function getCategory(
   importance: ImportanceLevel,
@@ -34,6 +34,13 @@ function dateWithTime(date: Date, time: string) {
 
 function eventBounds(event: WeeklyEvent) {
   const day = parseISO(`${event.date}T00:00:00`);
+  return {
+    start: dateWithTime(day, event.startTime),
+    end: dateWithTime(day, event.endTime),
+  };
+}
+
+function routineEventBounds(event: RoutineEvent, day: Date) {
   return {
     start: dateWithTime(day, event.startTime),
     end: dateWithTime(day, event.endTime),
@@ -66,12 +73,14 @@ function findEarliestSlot({
   due,
   estimateMinutes,
   scheduledBlocks,
+  restMinutes,
 }: {
   dayEnd: Date;
   dayStart: Date;
   due: Date;
   estimateMinutes: number;
   scheduledBlocks: Array<{ start: Date; end: Date }>;
+  restMinutes: number;
 }) {
   let cursor = dayStart;
 
@@ -82,7 +91,7 @@ function findEarliestSlot({
     const conflict = scheduledBlocks.find((block) => overlaps(cursor, proposedEnd, block.start, block.end));
     if (!conflict) return cursor;
 
-    cursor = addMinutes(conflict.end, 10);
+    cursor = addMinutes(conflict.end, restMinutes);
   }
 
   return null;
@@ -92,7 +101,14 @@ export function buildWeeklySchedule(data: AppData): Task[] {
   const now = new Date();
   const weekStart = startOfDay(now);
   const weekDays = Array.from({ length: 7 }, (_, index) => addDays(weekStart, index));
+  const restMinutes = Math.max(15, data.routine.restMinutes ?? 15);
   const scheduledBlocks = data.events.map(eventBounds);
+  for (const day of weekDays) {
+    for (const event of data.routineEvents || []) {
+      if (!event.daysOfWeek.includes(day.getDay())) continue;
+      scheduledBlocks.push(routineEventBounds(event, day));
+    }
+  }
 
   const candidates = data.tasks
     .filter((task) => task.status !== 'complete')
@@ -104,14 +120,15 @@ export function buildWeeklySchedule(data: AppData): Task[] {
       scheduledEnd: undefined,
     }))
     .sort((a, b) => {
+      const priorityDelta = priorityScore(b) - priorityScore(a);
+      if (priorityDelta !== 0) return priorityDelta;
+
       const dueDelta = compareAsc(
         parseISO(`${a.dueDate}T${a.dueTime || '23:59'}:00`),
         parseISO(`${b.dueDate}T${b.dueTime || '23:59'}:00`),
       );
       if (dueDelta !== 0) return dueDelta;
 
-      const priorityDelta = priorityScore(b) - priorityScore(a);
-      if (priorityDelta !== 0) return priorityDelta;
       return compareAsc(parseISO(a.dueDate), parseISO(b.dueDate));
     });
 
@@ -122,7 +139,7 @@ export function buildWeeklySchedule(data: AppData): Task[] {
       if (isAfter(startOfDay(day), startOfDay(due))) break;
 
       const routineDayStart = dateWithTime(day, data.routine.wakeTime);
-      const dayStart = isSameDay(day, now) ? laterDate(routineDayStart, now) : routineDayStart;
+      const dayStart = isSameDay(day, now) ? laterDate(routineDayStart, addMinutes(now, restMinutes)) : routineDayStart;
       const dayEnd = dateWithTime(day, data.routine.sleepTime);
       if (!isBefore(dayStart, dayEnd)) continue;
 
@@ -131,12 +148,13 @@ export function buildWeeklySchedule(data: AppData): Task[] {
         dayStart,
         due,
         estimateMinutes: task.estimateMinutes,
+        restMinutes,
         scheduledBlocks,
       });
 
       if (slot) {
         const proposedEnd = addMinutes(slot, task.estimateMinutes);
-        const bufferEnd = addMinutes(proposedEnd, 10);
+        const bufferEnd = addMinutes(proposedEnd, restMinutes);
         scheduledBlocks.push({ start: slot, end: bufferEnd });
         return {
           ...task,

@@ -7,17 +7,33 @@ export const defaultData: AppData = {
   routine: {
     wakeTime: '07:00',
     sleepTime: '23:00',
+    restMinutes: 15,
   },
+  routineEvents: [],
   events: [],
   tasks: [],
 };
+
+function normalizeData(data: Partial<AppData>): AppData {
+  return {
+    ...defaultData,
+    ...data,
+    routine: {
+      ...defaultData.routine,
+      ...data.routine,
+    },
+    routineEvents: data.routineEvents || [],
+    events: data.events || [],
+    tasks: data.tasks || [],
+  };
+}
 
 export function loadLocalData(): AppData {
   const stored = localStorage.getItem(DATA_KEY);
   if (!stored) return defaultData;
 
   try {
-    return { ...defaultData, ...JSON.parse(stored) } as AppData;
+    return normalizeData(JSON.parse(stored));
   } catch {
     return defaultData;
   }
