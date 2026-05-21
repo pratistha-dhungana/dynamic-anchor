@@ -356,7 +356,7 @@ function App() {
     const scheduledData = { ...nextData, tasks: scheduledTasksNext };
     updateData(scheduledData);
 
-    if (!showAlerts) return;
+    if (!showAlerts) return scheduledData;
 
     const newlyUnscheduledTask = previousData
       ? scheduledTasksNext.find((task) => {
@@ -368,12 +368,14 @@ function App() {
       ? scheduledTasksNext.find((task) => task.id === watchedTaskId)
       : newlyUnscheduledTask;
 
-    if (!watchedTask || watchedTask.status !== 'pending' || dismissedScheduleAlerts.includes(watchedTask.id)) return;
+    if (!watchedTask || watchedTask.status !== 'pending' || dismissedScheduleAlerts.includes(watchedTask.id)) return scheduledData;
 
     setScheduleAlert({
       taskId: watchedTask.id,
       type: shouldOfferPlanningOptions(watchedTask) ? 'high-priority' : 'no-time',
     });
+
+    return scheduledData;
   }
 
   function refitSchedule() {
@@ -415,7 +417,12 @@ function App() {
 
     setDismissedScheduleAlerts((taskIds) => taskIds.filter((taskId) => taskId !== task.id));
     const nextData = { ...data, tasks: [...data.tasks, task] };
-    applySchedule(nextData, task.id);
+    const scheduledData = applySchedule(nextData, task.id);
+    const scheduledTask = scheduledData.tasks.find((item) => item.id === task.id);
+    if (scheduledTask?.scheduledStart) {
+      setSelectedDate(toDateInputValue(parseISO(scheduledTask.scheduledStart)));
+      setActiveTab('schedule');
+    }
     setTaskForm({ ...emptyTask, dueDate: form.dueDate });
     if (guestMode && data.tasks.length >= 2) setShowGuestNudge(true);
   }
