@@ -60,31 +60,6 @@ function laterDate(first: Date, second: Date) {
   return isAfter(first, second) ? first : second;
 }
 
-function findDeadlineSlot({
-  dayEnd,
-  dayStart,
-  due,
-  estimateMinutes,
-  scheduledBlocks,
-}: {
-  dayEnd: Date;
-  dayStart: Date;
-  due: Date;
-  estimateMinutes: number;
-  scheduledBlocks: Array<{ start: Date; end: Date }>;
-}) {
-  let cursor = addMinutes(isBefore(due, dayEnd) ? due : dayEnd, -estimateMinutes);
-
-  while (!isBefore(cursor, dayStart)) {
-    const proposedEnd = addMinutes(cursor, estimateMinutes);
-    const conflict = scheduledBlocks.find((block) => overlaps(cursor, proposedEnd, block.start, block.end));
-    if (!conflict) return cursor;
-    cursor = addMinutes(conflict.start, -estimateMinutes - 10);
-  }
-
-  return null;
-}
-
 function findEarliestSlot({
   dayEnd,
   dayStart,
@@ -151,22 +126,13 @@ export function buildWeeklySchedule(data: AppData): Task[] {
       const dayEnd = dateWithTime(day, data.routine.sleepTime);
       if (!isBefore(dayStart, dayEnd)) continue;
 
-      const shouldBackfillFromDeadline = isSameDay(day, due) && Boolean(task.dueTime);
-      const slot = shouldBackfillFromDeadline
-        ? findDeadlineSlot({
-            dayEnd,
-            dayStart,
-            due,
-            estimateMinutes: task.estimateMinutes,
-            scheduledBlocks,
-          })
-        : findEarliestSlot({
-            dayEnd,
-            dayStart,
-            due,
-            estimateMinutes: task.estimateMinutes,
-            scheduledBlocks,
-          });
+      const slot = findEarliestSlot({
+        dayEnd,
+        dayStart,
+        due,
+        estimateMinutes: task.estimateMinutes,
+        scheduledBlocks,
+      });
 
       if (slot) {
         const proposedEnd = addMinutes(slot, task.estimateMinutes);

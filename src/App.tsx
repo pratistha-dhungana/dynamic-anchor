@@ -6,7 +6,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock3,
-  History,
   LayoutGrid,
   ListTodo,
   LogIn,
@@ -25,7 +24,7 @@ import { defaultData, loadLocalData, loadLocalProfile, saveLocalData, saveLocalP
 import { isSupabaseConfigured, supabase } from './lib/supabase';
 import type { AppData, EisenhowerCategory, ImportanceLevel, Profile, Task, UrgencyLevel, WeeklyEvent } from './types';
 
-type TabId = 'schedule' | 'tasks' | 'routine' | 'matrix' | 'history';
+type TabId = 'schedule' | 'tasks' | 'routine' | 'matrix';
 type ScheduleAlert =
   | { taskId: string; type: 'no-time' }
   | { taskId: string; type: 'high-priority' };
@@ -35,7 +34,6 @@ const tabs: Array<{ id: TabId; label: string; icon: typeof CalendarDays }> = [
   { id: 'tasks', label: 'Add Tasks', icon: ListTodo },
   { id: 'routine', label: 'Routine', icon: Clock3 },
   { id: 'matrix', label: 'Matrix', icon: LayoutGrid },
-  { id: 'history', label: 'History', icon: History },
 ];
 
 const categories: EisenhowerCategory[] = [
@@ -90,6 +88,10 @@ function dateWithTime(date: Date, time: string) {
   next.setHours(0, 0, 0, 0);
   next.setMinutes(minutesFromTime(time));
   return next;
+}
+
+function rangesOverlap(start: Date, end: Date, blockStart: Date, blockEnd: Date) {
+  return isBefore(start, blockEnd) && isAfter(end, blockStart);
 }
 
 function toDateInputValue(date: Date) {
@@ -264,16 +266,22 @@ function App() {
     setData(next);
   }
 
-  function applySchedule(nextData: AppData, watchedTaskId?: string, showAlerts = true) {
+  function applySchedule(nextData: AppData, watchedTaskId?: string, showAlerts = true, previousData?: AppData) {
     const scheduledTasksNext = buildWeeklySchedule(nextData);
     const scheduledData = { ...nextData, tasks: scheduledTasksNext };
     updateData(scheduledData);
 
     if (!showAlerts) return;
 
+    const newlyUnscheduledTask = previousData
+      ? scheduledTasksNext.find((task) => {
+          const previousTask = previousData.tasks.find((item) => item.id === task.id);
+          return previousTask?.scheduledStart && task.status === 'pending' && !isTaskPastDue(task);
+        })
+      : undefined;
     const watchedTask = watchedTaskId
       ? scheduledTasksNext.find((task) => task.id === watchedTaskId)
-      : scheduledTasksNext.find((task) => task.status === 'pending' && task.importance === 'important');
+      : newlyUnscheduledTask;
 
     if (!watchedTask || watchedTask.status !== 'pending' || dismissedScheduleAlerts.includes(watchedTask.id)) return;
 
@@ -376,7 +384,7 @@ function App() {
     };
 
     const nextData = { ...data, events: [...data.events, event] };
-    applySchedule(nextData, undefined, false);
+    applySchedule(nextData, undefined, true, data);
     setEventForm({ ...emptyEvent, date: eventForm.date });
     setShowEventModal(false);
   }
@@ -693,7 +701,7 @@ function App() {
           </div>
         </header>
 
-        <nav className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+        <nav className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {tabs.map((tab) => {
             const Icon = tab.icon;
             return (
@@ -752,8 +760,6 @@ function App() {
         ) : null}
 
         {activeTab === 'matrix' ? <MatrixView tasks={activeTasks} /> : null}
-
-        {activeTab === 'history' ? <HistoryView onDelete={deleteTask} tasks={completedTasks} /> : null}
       </main>
     </div>
   );
@@ -828,13 +834,15 @@ function ScheduleView({
           {hours.map((hour) => {
             const nextHour = addHours(hour, 1);
             const hourTasks = selectedScheduledTasks.filter((task) => {
-              if (!task.scheduledStart) return false;
+              if (!task.scheduledStart || !task.scheduledEnd) return false;
               const start = parseISO(task.scheduledStart);
-              return start >= hour && start < nextHour;
+              const end = parseISO(task.scheduledEnd);
+              return rangesOverlap(start, end, hour, nextHour);
             });
             const hourEvents = selectedEvents.filter((event) => {
               const start = dateWithTime(parseISO(`${event.date}T00:00:00`), event.startTime);
-              return start >= hour && start < nextHour;
+              const end = dateWithTime(parseISO(`${event.date}T00:00:00`), event.endTime);
+              return rangesOverlap(start, end, hour, nextHour);
             });
             const routineMarkers = [
               { id: 'wake', label: 'Wake up', time: routine.wakeTime },
@@ -866,9 +874,11 @@ function ScheduleView({
                         <button className="icon-action" title="Mark event complete" onClick={() => onToggleEventComplete(event.id)}>
                           <Check className="h-4 w-4" />
                         </button>
-                        <button className="icon-action text-flame hover:border-flame hover:text-flame" title="Delete event" onClick={() => onDeleteEvent(event.id)}>
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                        {!event.completed ? (
+                          <button className="icon-action text-flame hover:border-flame hover:text-flame" title="Delete event" onClick={() => onDeleteEvent(event.id)}>
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        ) : null}
                       </div>
                     </div>
                   ))}
@@ -884,9 +894,11 @@ function ScheduleView({
                           <button className="icon-action" title="Refit as incomplete" onClick={() => onIncomplete(task.id)}>
                             <RefreshCw className="h-4 w-4" />
                           </button>
-                          <button className="icon-action text-flame hover:border-flame hover:text-flame" title="Delete task" onClick={() => onDelete(task.id)}>
-                            <Trash2 className="h-4 w-4" />
-                          </button>
+                          {task.status !== 'complete' ? (
+                            <button className="icon-action text-flame hover:border-flame hover:text-flame" title="Delete task" onClick={() => onDelete(task.id)}>
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          ) : null}
                         </>
                       }
                     />
@@ -907,7 +919,7 @@ function ScheduleView({
       <aside className="grid content-start gap-3">
         <PastDueList onDelete={onDelete} onRefit={onRefitPastDue} refitDate={selectedDate} tasks={pastDueTasks} />
         <SummaryList label="Scheduled" onDelete={onDelete} tasks={selectedOpenScheduledTasks} />
-        <CompletedActivityList events={selectedCompletedEvents} onDelete={onDelete} onDeleteEvent={onDeleteEvent} tasks={selectedCompletedTasks} />
+        <CompletedActivityList events={selectedCompletedEvents} tasks={selectedCompletedTasks} />
         <EventSummaryList events={selectedUpcomingEvents} onDeleteEvent={onDeleteEvent} />
       </aside>
     </section>
@@ -981,13 +993,9 @@ function SummaryList({ label, onDelete, tasks }: { label: string; onDelete: (tas
 
 function CompletedActivityList({
   events,
-  onDelete,
-  onDeleteEvent,
   tasks,
 }: {
   events: WeeklyEvent[];
-  onDelete: (taskId: string) => void;
-  onDeleteEvent: (eventId: string) => void;
   tasks: Task[];
 }) {
   const total = tasks.length + events.length;
@@ -1007,9 +1015,6 @@ function CompletedActivityList({
                 {task.scheduledStart ? format(parseISO(task.scheduledStart), 'h:mm a') : formatDateTime(task.completedAt)}
               </div>
             </div>
-            <button className="icon-action text-flame hover:border-flame hover:text-flame" title="Delete task" onClick={() => onDelete(task.id)}>
-              <Trash2 className="h-4 w-4" />
-            </button>
           </div>
         ))}
         {events.slice(0, Math.max(0, 5 - tasks.length)).map((event) => (
@@ -1020,9 +1025,6 @@ function CompletedActivityList({
                 {formatClockTime(event.startTime)}-{formatClockTime(event.endTime)}
               </div>
             </div>
-            <button className="icon-action text-flame hover:border-flame hover:text-flame" title="Delete event" onClick={() => onDeleteEvent(event.id)}>
-              <Trash2 className="h-4 w-4" />
-            </button>
           </div>
         ))}
         {!total ? <div className="text-sm text-zinc-500">Nothing completed on this date.</div> : null}
@@ -1245,38 +1247,6 @@ function MatrixView({ tasks }: { tasks: Task[] }) {
           </div>
         </div>
       ))}
-    </section>
-  );
-}
-
-function HistoryView({ onDelete, tasks }: { onDelete: (taskId: string) => void; tasks: Task[] }) {
-  return (
-    <section className="panel">
-      <SectionTitle eyebrow="Completed Items / History" title={`${tasks.length} completed anchors`} />
-      <div className="mt-5 grid gap-3">
-        {tasks.map((task) => (
-          <div className="rounded-lg border border-aura bg-panel p-4" key={task.id}>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-[0.16em] text-hibiscus">Completed task</p>
-                <h3 className="mt-1 text-lg font-bold text-zinc-900">{task.title}</h3>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="status-pill bg-indigo text-white">complete</span>
-                <button className="icon-action text-flame hover:border-flame hover:text-flame" title="Delete task" onClick={() => onDelete(task.id)}>
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-            {task.description ? <p className="mt-3 text-sm leading-5 text-zinc-600">{task.description}</p> : null}
-            <p className="mt-2 text-sm text-zinc-500">
-              Original deadline: {formatDue(task)} • Estimate: {formatDuration(task.estimateMinutes)} • Completed:{' '}
-              {formatDateTime(task.completedAt)}
-            </p>
-          </div>
-        ))}
-        {!tasks.length ? <EmptyState text="Completed tasks will land here with their timestamps." /> : null}
-      </div>
     </section>
   );
 }

@@ -41,11 +41,11 @@ textarea {
   }
 
   .btn-secondary {
-    @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-line bg-night px-4 py-2 text-sm font-semibold text-zinc-800 hover:border-hibiscus hover:bg-panel;
+    @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-line bg-night px-4 py-2 text-sm font-semibold text-zinc-800 hover:border-hibiscus hover:bg-baby;
   }
 
   .tab-button {
-    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-line bg-night px-3 py-2 text-sm font-semibold text-zinc-700 hover:border-hibiscus hover:text-zinc-950;
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-line bg-night px-3 py-2 text-sm font-semibold text-zinc-700 hover:border-hibiscus hover:bg-baby hover:text-zinc-950;
   }
 
   .tab-active {

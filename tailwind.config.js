@@ -11,6 +11,7 @@ export default {
         blush: '#EA44D4',
         roseglass: '#EEF0F5',
         hibiscus: '#EA44D4',
+        baby: '#F8BBD9',
         flame: '#DD3027',
         aura: '#733D6F',
         indigo: '#5848B3',
