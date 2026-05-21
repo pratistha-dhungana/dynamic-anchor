@@ -14,6 +14,7 @@ import {
   Plus,
   RefreshCw,
   Sparkles,
+  Trash2,
   UserRound,
   X,
 } from 'lucide-react';
@@ -375,6 +376,23 @@ function App() {
     window.setTimeout(() => setShowConfetti(false), 1200);
   }
 
+  function deleteTask(taskId: string) {
+    const task = data.tasks.find((item) => item.id === taskId);
+    if (!task) return;
+
+    const confirmed = window.confirm(`Delete "${task.title}"? This cannot be undone.`);
+    if (!confirmed) return;
+
+    const nextData = {
+      ...data,
+      tasks: data.tasks.filter((item) => item.id !== taskId),
+    };
+
+    setDismissedScheduleAlerts((taskIds) => taskIds.filter((dismissedTaskId) => dismissedTaskId !== taskId));
+    if (scheduleAlert?.taskId === taskId) setScheduleAlert(null);
+    applySchedule(nextData);
+  }
+
   function markIncomplete(taskId: string) {
     const nextData = {
       ...data,
@@ -608,6 +626,7 @@ function App() {
             form={taskForm}
             onAdd={addTask}
             onComplete={completeTask}
+            onDelete={deleteTask}
             onEdit={openTaskEditor}
             onFormChange={setTaskForm}
             pendingTasks={pendingTasks}
@@ -627,7 +646,7 @@ function App() {
 
         {activeTab === 'matrix' ? <MatrixView tasks={pendingTasks} /> : null}
 
-        {activeTab === 'history' ? <HistoryView tasks={completedTasks} /> : null}
+        {activeTab === 'history' ? <HistoryView onDelete={deleteTask} tasks={completedTasks} /> : null}
       </main>
     </div>
   );
@@ -806,6 +825,7 @@ function TaskView({
   form,
   onAdd,
   onComplete,
+  onDelete,
   onEdit,
   onFormChange,
   pendingTasks,
@@ -813,6 +833,7 @@ function TaskView({
   form: typeof emptyTask;
   onAdd: () => void;
   onComplete: (taskId: string) => void;
+  onDelete: (taskId: string) => void;
   onEdit: (task: Task) => void;
   onFormChange: (form: typeof emptyTask) => void;
   pendingTasks: Task[];
@@ -886,6 +907,9 @@ function TaskView({
                   </button>
                   <button className="icon-action" title="Edit task" onClick={() => onEdit(task)}>
                     <Pencil className="h-4 w-4" />
+                  </button>
+                  <button className="icon-action text-red-200 hover:border-red-300/60 hover:text-red-200" title="Delete task" onClick={() => onDelete(task.id)}>
+                    <Trash2 className="h-4 w-4" />
                   </button>
                 </>
               }
@@ -989,7 +1013,7 @@ function MatrixView({ tasks }: { tasks: Task[] }) {
   );
 }
 
-function HistoryView({ tasks }: { tasks: Task[] }) {
+function HistoryView({ onDelete, tasks }: { onDelete: (taskId: string) => void; tasks: Task[] }) {
   return (
     <section className="panel">
       <SectionTitle eyebrow="Completed Items / History" title={`${tasks.length} completed anchors`} />
@@ -1001,7 +1025,12 @@ function HistoryView({ tasks }: { tasks: Task[] }) {
                 <p className="text-xs font-bold uppercase tracking-[0.16em] text-emerald-200">Completed task</p>
                 <h3 className="mt-1 text-lg font-bold text-white">{task.title}</h3>
               </div>
-              <span className="status-pill bg-emerald-400/15 text-emerald-200">complete</span>
+              <div className="flex items-center gap-2">
+                <span className="status-pill bg-emerald-400/15 text-emerald-200">complete</span>
+                <button className="icon-action text-red-200 hover:border-red-300/60 hover:text-red-200" title="Delete task" onClick={() => onDelete(task.id)}>
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
             </div>
             {task.description ? <p className="mt-3 text-sm leading-5 text-zinc-300">{task.description}</p> : null}
             <p className="mt-2 text-sm text-zinc-400">
