@@ -798,6 +798,9 @@ function ScheduleView({
   const hourCount = Math.max(1, Math.ceil((sleep.getTime() - wake.getTime()) / 3_600_000));
   const hours = Array.from({ length: hourCount }, (_, index) => addHours(wake, index));
   const selectedEvents = events.filter((event) => isSameDay(parseISO(`${event.date}T00:00:00`), visibleDate));
+  const selectedUpcomingEvents = selectedEvents.filter((event) => !event.completed);
+  const selectedCompletedEvents = selectedEvents.filter((event) => event.completed);
+  const selectedOpenScheduledTasks = selectedScheduledTasks.filter((task) => task.status !== 'complete');
   const changeDateBy = (days: number) => setSelectedDate(toDateInputValue(addDays(visibleDate, days)));
 
   return (
@@ -903,9 +906,9 @@ function ScheduleView({
 
       <aside className="grid content-start gap-3">
         <PastDueList onDelete={onDelete} onRefit={onRefitPastDue} refitDate={selectedDate} tasks={pastDueTasks} />
-        <SummaryList label="Scheduled" onDelete={onDelete} tasks={selectedScheduledTasks} />
-        <SummaryList label="Completed" onDelete={onDelete} tasks={selectedCompletedTasks} />
-        <EventSummaryList events={selectedEvents} />
+        <SummaryList label="Scheduled" onDelete={onDelete} tasks={selectedOpenScheduledTasks} />
+        <CompletedActivityList events={selectedCompletedEvents} onDelete={onDelete} onDeleteEvent={onDeleteEvent} tasks={selectedCompletedTasks} />
+        <EventSummaryList events={selectedUpcomingEvents} onDeleteEvent={onDeleteEvent} />
       </aside>
     </section>
   );
@@ -976,7 +979,59 @@ function SummaryList({ label, onDelete, tasks }: { label: string; onDelete: (tas
   );
 }
 
-function EventSummaryList({ events }: { events: WeeklyEvent[] }) {
+function CompletedActivityList({
+  events,
+  onDelete,
+  onDeleteEvent,
+  tasks,
+}: {
+  events: WeeklyEvent[];
+  onDelete: (taskId: string) => void;
+  onDeleteEvent: (eventId: string) => void;
+  tasks: Task[];
+}) {
+  const total = tasks.length + events.length;
+
+  return (
+    <div className="panel-compact">
+      <div className="flex items-baseline justify-between gap-3">
+        <h3 className="text-sm font-semibold uppercase tracking-[0.14em] text-zinc-500">Completed</h3>
+        <span className="text-2xl font-bold text-zinc-900">{total}</span>
+      </div>
+      <div className="mt-3 grid gap-2">
+        {tasks.slice(0, 5).map((task) => (
+          <div className="flex items-start justify-between gap-2 rounded-lg border border-aura bg-panel p-2.5" key={task.id}>
+            <div>
+              <div className="text-sm font-semibold text-zinc-900">{task.title}</div>
+              <div className="text-xs text-zinc-500">
+                {task.scheduledStart ? format(parseISO(task.scheduledStart), 'h:mm a') : formatDateTime(task.completedAt)}
+              </div>
+            </div>
+            <button className="icon-action text-flame hover:border-flame hover:text-flame" title="Delete task" onClick={() => onDelete(task.id)}>
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
+        ))}
+        {events.slice(0, Math.max(0, 5 - tasks.length)).map((event) => (
+          <div className="flex items-start justify-between gap-2 rounded-lg border border-indigo bg-panel p-2.5" key={event.id}>
+            <div>
+              <div className="text-sm font-semibold text-zinc-900">{event.title}</div>
+              <div className="text-xs text-zinc-500">
+                {formatClockTime(event.startTime)}-{formatClockTime(event.endTime)}
+              </div>
+            </div>
+            <button className="icon-action text-flame hover:border-flame hover:text-flame" title="Delete event" onClick={() => onDeleteEvent(event.id)}>
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
+        ))}
+        {!total ? <div className="text-sm text-zinc-500">Nothing completed on this date.</div> : null}
+      </div>
+    </div>
+  );
+}
+
+function EventSummaryList({ events, onDeleteEvent }: { events: WeeklyEvent[]; onDeleteEvent: (eventId: string) => void }) {
   return (
     <div className="panel-compact">
       <div className="flex items-baseline justify-between gap-3">
@@ -985,11 +1040,16 @@ function EventSummaryList({ events }: { events: WeeklyEvent[] }) {
       </div>
       <div className="mt-3 grid gap-2">
         {events.slice(0, 5).map((event) => (
-          <div className="rounded-lg border border-aura bg-panel p-2.5" key={event.id}>
-            <div className="text-sm font-semibold text-zinc-900">{event.title}</div>
-            <div className="text-xs text-zinc-500">
-              {formatClockTime(event.startTime)}-{formatClockTime(event.endTime)}
+          <div className="flex items-start justify-between gap-2 rounded-lg border border-aura bg-panel p-2.5" key={event.id}>
+            <div>
+              <div className="text-sm font-semibold text-zinc-900">{event.title}</div>
+              <div className="text-xs text-zinc-500">
+                {formatClockTime(event.startTime)}-{formatClockTime(event.endTime)}
+              </div>
             </div>
+            <button className="icon-action text-flame hover:border-flame hover:text-flame" title="Delete event" onClick={() => onDeleteEvent(event.id)}>
+              <Trash2 className="h-4 w-4" />
+            </button>
           </div>
         ))}
         {!events.length ? <div className="text-sm text-zinc-500">No events on this date.</div> : null}
@@ -1113,10 +1173,19 @@ function RoutineView({
   data: AppData;
   onDataChange: (data: AppData) => void;
 }) {
-  function updateRoutine(nextRoutine: AppData['routine']) {
-    const nextData = { ...data, routine: nextRoutine };
+  const [routineDraft, setRoutineDraft] = useState(data.routine);
+
+  useEffect(() => {
+    setRoutineDraft(data.routine);
+  }, [data.routine]);
+
+  function saveRoutine() {
+    const nextData = { ...data, routine: routineDraft };
     onDataChange({ ...nextData, tasks: buildWeeklySchedule(nextData) });
   }
+
+  const hasRoutineChanges =
+    routineDraft.wakeTime !== data.routine.wakeTime || routineDraft.sleepTime !== data.routine.sleepTime;
 
   return (
     <section className="grid gap-4 lg:grid-cols-[0.85fr_1.15fr]">
@@ -1124,9 +1193,13 @@ function RoutineView({
         <SectionTitle eyebrow="Weekly Events / Routine" title="Set your normal boundaries" />
         <div className="mt-5 grid gap-3">
           <div className="grid gap-3 sm:grid-cols-2">
-            <TimeSelect label="Wake-up time" value={data.routine.wakeTime} onChange={(wakeTime) => updateRoutine({ ...data.routine, wakeTime })} />
-            <TimeSelect label="Sleep time" value={data.routine.sleepTime} onChange={(sleepTime) => updateRoutine({ ...data.routine, sleepTime })} />
+            <TimeSelect label="Wake-up time" value={routineDraft.wakeTime} onChange={(wakeTime) => setRoutineDraft({ ...routineDraft, wakeTime })} />
+            <TimeSelect label="Sleep time" value={routineDraft.sleepTime} onChange={(sleepTime) => setRoutineDraft({ ...routineDraft, sleepTime })} />
           </div>
+          <button className="btn-primary w-full justify-center" disabled={!hasRoutineChanges} onClick={saveRoutine}>
+            Save routine
+          </button>
+          {hasRoutineChanges ? <p className="text-sm text-zinc-500">Press save to update the schedule.</p> : null}
         </div>
       </div>
 
@@ -1637,13 +1710,14 @@ function TaskEditModal({
 function Confetti() {
   return (
     <div className="pointer-events-none fixed inset-0 z-50 overflow-hidden">
-      {Array.from({ length: 22 }, (_, index) => (
+      {Array.from({ length: 56 }, (_, index) => (
         <span
           className="confetti"
           key={index}
           style={{
-            left: `${8 + index * 4}%`,
-            animationDelay: `${(index % 7) * 0.05}s`,
+            ['--angle' as string]: `${index * 17}deg`,
+            ['--distance' as string]: `${150 + (index % 9) * 18}px`,
+            animationDelay: `${(index % 8) * 0.025}s`,
           }}
         />
       ))}

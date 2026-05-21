@@ -95,12 +95,13 @@ textarea {
 
 .confetti {
   position: absolute;
-  top: -24px;
-  width: 9px;
-  height: 16px;
-  border-radius: 3px;
+  left: 50%;
+  top: 50%;
+  width: 14px;
+  height: 24px;
+  border-radius: 4px;
   background: #ea44d4;
-  animation: confetti-fall 1.1s ease-out forwards;
+  animation: confetti-burst 1.35s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
 }
 
 .confetti:nth-child(3n) {
@@ -111,13 +112,16 @@ textarea {
   background: #5848b3;
 }
 
-@keyframes confetti-fall {
+@keyframes confetti-burst {
   0% {
-    transform: translateY(0) rotate(0deg);
+    transform: translate(-50%, -50%) rotate(0deg) scale(0.4);
+    opacity: 1;
+  }
+  70% {
     opacity: 1;
   }
   100% {
-    transform: translateY(85vh) rotate(540deg);
+    transform: translate(-50%, -50%) rotate(var(--angle)) translateY(var(--distance)) rotate(720deg) scale(1.1);
     opacity: 0;
   }
 }
