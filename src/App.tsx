@@ -117,6 +117,12 @@ function shouldOfferPlanningOptions(task: Task) {
   return task.importance === 'important' && isAfter(startOfDay(due), startOfDay(now)) && isAfter(due, now);
 }
 
+function isTaskPastDue(task: Task) {
+  if (task.status === 'complete') return false;
+  const due = parseISO(`${task.dueDate}T${task.dueTime || '23:59'}:00`);
+  return isBefore(due, new Date());
+}
+
 function getAuthRedirectUrl() {
   return `${window.location.origin}/`;
 }
@@ -179,6 +185,9 @@ function App() {
   const selectedCompletedTasks = completedTasks.filter(
     (task) => task.completedAt && isSameDay(parseISO(task.completedAt), selectedDateObject),
   );
+  const pastDueTasks = pendingTasks
+    .filter(isTaskPastDue)
+    .sort((a, b) => `${a.dueDate}${a.dueTime || ''}`.localeCompare(`${b.dueDate}${b.dueTime || ''}`));
 
   useEffect(() => {
     if (!supabase) {
@@ -640,6 +649,7 @@ function App() {
             onComplete={completeTask}
             onIncomplete={markIncomplete}
             onOpenEventModal={openEventModal}
+            pastDueTasks={pastDueTasks}
             routine={data.routine}
             selectedCompletedTasks={selectedCompletedTasks}
             selectedDate={selectedDate}
@@ -657,6 +667,7 @@ function App() {
             onDelete={deleteTask}
             onEdit={openTaskEditor}
             onFormChange={setTaskForm}
+            pastDueTasks={pastDueTasks}
             pendingTasks={pendingTasks}
           />
         ) : null}
@@ -681,6 +692,7 @@ function ScheduleView({
   onComplete,
   onIncomplete,
   onOpenEventModal,
+  pastDueTasks,
   routine,
   selectedCompletedTasks,
   selectedDate,
@@ -692,6 +704,7 @@ function ScheduleView({
   onComplete: (taskId: string) => void;
   onIncomplete: (taskId: string) => void;
   onOpenEventModal: (date: string, startTime: string) => void;
+  pastDueTasks: Task[];
   routine: AppData['routine'];
   selectedCompletedTasks: Task[];
   selectedDate: string;
@@ -796,11 +809,32 @@ function ScheduleView({
       </div>
 
       <aside className="grid content-start gap-3">
+        <PastDueList tasks={pastDueTasks} />
         <SummaryList label="Scheduled" tasks={selectedScheduledTasks} />
         <SummaryList label="Completed" tasks={selectedCompletedTasks} />
         <EventSummaryList events={selectedEvents} />
       </aside>
     </section>
+  );
+}
+
+function PastDueList({ tasks }: { tasks: Task[] }) {
+  return (
+    <div className="rounded-lg border border-red-300/25 bg-red-400/10 p-3 shadow-glow sm:p-4">
+      <div className="flex items-baseline justify-between gap-3">
+        <h3 className="text-sm font-semibold uppercase tracking-[0.14em] text-red-200">Past due</h3>
+        <span className="text-2xl font-bold text-white">{tasks.length}</span>
+      </div>
+      <div className="mt-3 grid gap-2">
+        {tasks.slice(0, 6).map((task) => (
+          <div className="rounded-lg border border-red-200/20 bg-black/15 p-2.5" key={task.id}>
+            <div className="text-sm font-semibold text-white">{task.title}</div>
+            <div className="text-xs text-red-100/80">Due {formatDue(task)}</div>
+          </div>
+        ))}
+        {!tasks.length ? <div className="text-sm text-zinc-500">No overdue tasks.</div> : null}
+      </div>
+    </div>
   );
 }
 
@@ -855,6 +889,7 @@ function TaskView({
   onDelete,
   onEdit,
   onFormChange,
+  pastDueTasks,
   pendingTasks,
 }: {
   form: typeof emptyTask;
@@ -863,6 +898,7 @@ function TaskView({
   onDelete: (taskId: string) => void;
   onEdit: (task: Task) => void;
   onFormChange: (form: typeof emptyTask) => void;
+  pastDueTasks: Task[];
   pendingTasks: Task[];
 }) {
   return (
@@ -923,6 +959,7 @@ function TaskView({
       <div className="panel">
         <SectionTitle eyebrow="Task Stack" title={`${pendingTasks.length} active items`} />
         <div className="mt-5 grid gap-3">
+          <PastDueList tasks={pastDueTasks} />
           {pendingTasks.map((task) => (
             <TaskCard
               key={task.id}
