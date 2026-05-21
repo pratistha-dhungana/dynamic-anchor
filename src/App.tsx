@@ -861,7 +861,6 @@ function App() {
             selectedDate={selectedDate}
             selectedScheduledTasks={selectedScheduledTasks}
             setSelectedDate={setSelectedDate}
-            scheduledTasks={scheduledTasks}
           />
         ) : null}
 
@@ -909,7 +908,6 @@ function ScheduleView({
   selectedDate,
   selectedScheduledTasks,
   setSelectedDate,
-  scheduledTasks,
 }: {
   events: WeeklyEvent[];
   onComplete: (taskId: string) => void;
@@ -926,7 +924,6 @@ function ScheduleView({
   selectedDate: string;
   selectedScheduledTasks: Task[];
   setSelectedDate: (date: string) => void;
-  scheduledTasks: Task[];
 }) {
   const visibleDate = parseISO(`${selectedDate}T00:00:00`);
   const wake = dateWithTime(visibleDate, routine.wakeTime);
@@ -944,6 +941,21 @@ function ScheduleView({
   const selectedCompletedEvents = selectedEvents.filter((event) => event.completed);
   const selectedOpenScheduledTasks = selectedScheduledTasks.filter((task) => task.status !== 'complete');
   const changeDateBy = (days: number) => setSelectedDate(toDateInputValue(addDays(visibleDate, days)));
+  const pixelsPerHour = 100;
+  const pixelsPerMinute = pixelsPerHour / 60;
+  const timelineHeight = Math.max(pixelsPerHour, hourCount * pixelsPerHour);
+  const minutesFromScheduleStart = (date: Date) => (date.getTime() - wake.getTime()) / 60_000;
+  const blockStyle = (start: Date, end: Date) => {
+    const top = Math.max(0, minutesFromScheduleStart(start) * pixelsPerMinute);
+    const height = Math.max(28, ((end.getTime() - start.getTime()) / 60_000) * pixelsPerMinute);
+    return { top: `${top}px`, height: `${height}px` };
+  };
+  const openEventModalFromTimeline = (event: React.MouseEvent<HTMLDivElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const rawMinutes = ((event.clientY - rect.top) / pixelsPerMinute);
+    const snappedMinutes = Math.max(0, Math.min(hourCount * 60 - 15, Math.floor(rawMinutes / 15) * 15));
+    onOpenEventModal(selectedDate, toTimeInputValue(minutesFromTime(routine.wakeTime) + snappedMinutes));
+  };
 
   return (
     <section className="grid gap-4 lg:grid-cols-[1.3fr_0.7fr]">
@@ -966,115 +978,106 @@ function ScheduleView({
             </button>
           </div>
         </div>
-        <div className="mt-5 grid gap-2">
-          {hours.map((hour) => {
-            const nextHour = addHours(hour, 1);
-            const overlappingTasks = selectedScheduledTasks.filter((task) => {
-              if (!task.scheduledStart || !task.scheduledEnd) return false;
-              const start = parseISO(task.scheduledStart);
-              const end = parseISO(task.scheduledEnd);
-              return rangesOverlap(start, end, hour, nextHour);
-            });
-            const hourTasks = overlappingTasks.filter((task) => {
-              if (!task.scheduledStart) return false;
-              const start = parseISO(task.scheduledStart);
-              return start >= hour && start < nextHour;
-            });
-            const overlappingEvents = selectedEvents.filter((event) => {
+        <div className="mt-5 grid grid-cols-[4rem_minmax(0,1fr)] gap-3 sm:grid-cols-[5rem_minmax(0,1fr)]">
+          <div className="relative" style={{ height: `${timelineHeight}px` }}>
+            {hours.map((hour, index) => (
+              <div
+                className="absolute left-0 right-0 -translate-y-2 text-sm font-bold text-zinc-500"
+                key={hour.toISOString()}
+                style={{ top: `${index * pixelsPerHour}px` }}
+              >
+                {format(hour, 'h a')}
+              </div>
+            ))}
+          </div>
+          <div
+            className="relative min-w-0 overflow-hidden rounded-lg border border-line bg-night"
+            onDoubleClick={openEventModalFromTimeline}
+            style={{ height: `${timelineHeight}px` }}
+          >
+            {hours.map((hour, index) => (
+              <div
+                className="absolute left-0 right-0 border-t border-line"
+                key={hour.toISOString()}
+                style={{ top: `${index * pixelsPerHour}px` }}
+              />
+            ))}
+            <div className="absolute left-3 right-3 top-0 text-xs font-semibold text-hibiscus">
+              Wake up • {formatClockTime(routine.wakeTime)}
+            </div>
+            <div className="absolute bottom-1 left-3 right-3 text-xs font-semibold text-aura">
+              Sleep • {formatClockTime(routine.sleepTime)}
+            </div>
+            {selectedEvents.map((event) => {
               const start = dateWithTime(parseISO(`${event.date}T00:00:00`), event.startTime);
               const end = dateWithTime(parseISO(`${event.date}T00:00:00`), event.endTime);
-              return rangesOverlap(start, end, hour, nextHour);
-            });
-            const hourEvents = overlappingEvents.filter((event) => {
-              const start = dateWithTime(parseISO(`${event.date}T00:00:00`), event.startTime);
-              return start >= hour && start < nextHour;
-            });
-            const isBlockedByEarlierItem = Boolean(overlappingTasks.length || overlappingEvents.length) && !hourTasks.length && !hourEvents.length;
-            const routineMarkers = [
-              { id: 'wake', label: 'Wake up', time: routine.wakeTime },
-              { id: 'sleep', label: 'Sleep', time: routine.sleepTime },
-            ].filter((marker) => {
-              const markerTime = dateWithTime(visibleDate, marker.time);
-              return markerTime >= hour && (marker.id === 'sleep' ? markerTime <= nextHour : markerTime < nextHour);
-            });
+              const isRoutine = event.id.startsWith('routine-');
 
-            return (
-              <div className="timeline-row" key={hour.toISOString()}>
-                <div className="timeline-time">{format(hour, 'h a')}</div>
-                <div className="grid min-w-0 gap-2">
-                  {routineMarkers.map((marker) => (
-                    <div className="rounded-lg border border-hibiscus bg-panel p-3" key={marker.id}>
-                      <div className="font-semibold text-zinc-900">{marker.label}</div>
-                      <div className="text-xs text-zinc-600">{formatClockTime(marker.time)}</div>
+              return (
+                <div
+                  className="absolute left-3 right-3 flex min-h-8 items-start justify-between gap-3 rounded-lg border border-indigo bg-indigo/10 p-2.5"
+                  key={event.id}
+                  onDoubleClick={(clickEvent) => clickEvent.stopPropagation()}
+                  style={blockStyle(start, end)}
+                >
+                  <div className={event.completed ? 'min-w-0 line-through decoration-flame decoration-2' : 'min-w-0'}>
+                    <div className="truncate text-sm font-semibold text-zinc-900">{event.title}</div>
+                    <div className="text-xs text-zinc-600">
+                      {formatClockTime(event.startTime)}-{formatClockTime(event.endTime)}
                     </div>
-                  ))}
-                  {hourEvents.map((event) => {
-                    const start = dateWithTime(parseISO(`${event.date}T00:00:00`), event.startTime);
-                    const end = dateWithTime(parseISO(`${event.date}T00:00:00`), event.endTime);
-                    const durationHeight = Math.max(44, Math.min(180, ((end.getTime() - start.getTime()) / 60_000) * 2));
-
-                    return (
-                      <div
-                        className="flex items-start justify-between gap-3 rounded-lg border border-indigo bg-night p-3"
-                        key={event.id}
-                        style={{ minHeight: `${durationHeight}px` }}
-                      >
-                        <div className={event.completed ? 'line-through decoration-flame decoration-2' : ''}>
-                          <div className="font-semibold text-zinc-900">{event.title}</div>
-                          <div className="text-xs text-zinc-600">
-                            {formatClockTime(event.startTime)}-{formatClockTime(event.endTime)}
-                          </div>
-                        </div>
-                        <div className="flex shrink-0 gap-2">
-                          {event.id.startsWith('routine-') ? (
-                            <span className="chip">routine</span>
-                          ) : (
-                            <>
-                              <button className="icon-action" title="Mark event complete" onClick={() => onToggleEventComplete(event.id)}>
-                                <Check className="h-4 w-4" />
-                              </button>
-                              {!event.completed ? (
-                                <button className="icon-action text-flame hover:border-flame hover:text-flame" title="Delete event" onClick={() => onDeleteEvent(event.id)}>
-                                  <Trash2 className="h-4 w-4" />
-                                </button>
-                              ) : null}
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                  {hourTasks.map((task) => (
-                    <TimelineTaskBlock
-                      key={task.id}
-                      task={task}
-                      actions={
-                        <>
-                          <button className="icon-action" title="Mark complete" onClick={() => onComplete(task.id)}>
-                            <Check className="h-4 w-4" />
+                  </div>
+                  <div className="flex shrink-0 gap-1.5">
+                    {isRoutine ? (
+                      <span className="chip">routine</span>
+                    ) : (
+                      <>
+                        <button className="icon-action" title="Mark event complete" onClick={() => onToggleEventComplete(event.id)}>
+                          <Check className="h-4 w-4" />
+                        </button>
+                        {!event.completed ? (
+                          <button className="icon-action text-flame hover:border-flame hover:text-flame" title="Delete event" onClick={() => onDeleteEvent(event.id)}>
+                            <Trash2 className="h-4 w-4" />
                           </button>
-                          <button className="icon-action" title="Refit as incomplete" onClick={() => onIncomplete(task.id, selectedDate)}>
-                            <RefreshCw className="h-4 w-4" />
-                          </button>
-                          {task.status !== 'complete' ? (
-                            <button className="icon-action text-flame hover:border-flame hover:text-flame" title="Delete task" onClick={() => onDelete(task.id)}>
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          ) : null}
-                        </>
-                      }
-                    />
-                  ))}
-                  {!hourTasks.length && !hourEvents.length && !routineMarkers.length && !isBlockedByEarlierItem ? (
-                    <button className="timeline-empty text-left" onDoubleClick={() => onOpenEventModal(selectedDate, format(hour, 'HH:mm'))}>
-                      Open focus time
-                    </button>
-                  ) : null}
+                        ) : null}
+                      </>
+                    )}
+                  </div>
                 </div>
+              );
+            })}
+            {selectedScheduledTasks.map((task) => {
+              if (!task.scheduledStart || !task.scheduledEnd) return null;
+              const isComplete = task.status === 'complete';
+
+              return (
+                <TimelineTaskBlock
+                  key={task.id}
+                  task={task}
+                  style={blockStyle(parseISO(task.scheduledStart), parseISO(task.scheduledEnd))}
+                  actions={
+                    isComplete ? null : (
+                      <>
+                        <button className="icon-action" title="Mark complete" onClick={() => onComplete(task.id)}>
+                          <Check className="h-4 w-4" />
+                        </button>
+                        <button className="icon-action" title="Refit as incomplete" onClick={() => onIncomplete(task.id, selectedDate)}>
+                          <RefreshCw className="h-4 w-4" />
+                        </button>
+                        <button className="icon-action text-flame hover:border-flame hover:text-flame" title="Delete task" onClick={() => onDelete(task.id)}>
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </>
+                    )
+                  }
+                />
+              );
+            })}
+            {!selectedScheduledTasks.length && !selectedEvents.length ? (
+              <div className="absolute inset-x-3 top-12">
+                <EmptyState text="Add tasks and events, then Dynamic Anchor will fit the week." />
               </div>
-            );
-          })}
-          {!scheduledTasks.length ? <EmptyState text="Add tasks and events, then Dynamic Anchor will fit the week." /> : null}
+            ) : null}
+          </div>
         </div>
       </div>
 
@@ -1541,14 +1544,14 @@ function TaskCard({ actions, compact = false, task }: { actions?: React.ReactNod
   );
 }
 
-function TimelineTaskBlock({ actions, task }: { actions?: React.ReactNode; task: Task }) {
-  const durationHeight = Math.max(34, Math.min(180, task.estimateMinutes * 2));
+function TimelineTaskBlock({ actions, style, task }: { actions?: React.ReactNode; style?: React.CSSProperties; task: Task }) {
   const isComplete = task.status === 'complete';
 
   return (
     <article
-      className="rounded-lg border border-hibiscus bg-panel px-3 py-2 hover:border-flame"
-      style={{ minHeight: `${durationHeight}px` }}
+      className="absolute left-3 right-3 min-h-8 rounded-lg border border-hibiscus bg-baby/70 px-3 py-2 hover:border-flame"
+      onDoubleClick={(event) => event.stopPropagation()}
+      style={style}
     >
       <div className="flex h-full items-start justify-between gap-3">
         <div className={`min-w-0 ${isComplete ? 'line-through decoration-flame decoration-2' : ''}`}>
