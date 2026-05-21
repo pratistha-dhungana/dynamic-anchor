@@ -28,6 +28,7 @@ type TabId = 'schedule' | 'tasks' | 'routine' | 'matrix';
 type ScheduleAlert =
   | { taskId: string; type: 'no-time' }
   | { taskId: string; type: 'high-priority' };
+type DeleteConfirmation = { id: string; title: string; type: 'event' | 'task' };
 
 const tabs: Array<{ id: TabId; label: string; icon: typeof CalendarDays }> = [
   { id: 'schedule', label: 'Today', icon: CalendarDays },
@@ -92,6 +93,37 @@ function dateWithTime(date: Date, time: string) {
 
 function rangesOverlap(start: Date, end: Date, blockStart: Date, blockEnd: Date) {
   return isBefore(start, blockEnd) && isAfter(end, blockStart);
+}
+
+function findScheduleConflict(data: AppData, start: Date, end: Date) {
+  const eventConflict = data.events.find((event) => {
+    const eventStart = dateWithTime(parseISO(`${event.date}T00:00:00`), event.startTime);
+    const eventEnd = dateWithTime(parseISO(`${event.date}T00:00:00`), event.endTime);
+    return rangesOverlap(start, end, eventStart, eventEnd);
+  });
+
+  if (eventConflict) {
+    const eventStart = dateWithTime(parseISO(`${eventConflict.date}T00:00:00`), eventConflict.startTime);
+    const eventEnd = dateWithTime(parseISO(`${eventConflict.date}T00:00:00`), eventConflict.endTime);
+    return {
+      title: eventConflict.title,
+      range: `${format(eventStart, 'h:mm a')}-${format(eventEnd, 'h:mm a')}`,
+    };
+  }
+
+  const taskConflict = data.tasks.find((task) => {
+    if (!task.scheduledStart || !task.scheduledEnd || task.status === 'pending') return false;
+    return rangesOverlap(start, end, parseISO(task.scheduledStart), parseISO(task.scheduledEnd));
+  });
+
+  if (taskConflict?.scheduledStart && taskConflict.scheduledEnd) {
+    return {
+      title: taskConflict.title,
+      range: `${format(parseISO(taskConflict.scheduledStart), 'h:mm a')}-${format(parseISO(taskConflict.scheduledEnd), 'h:mm a')}`,
+    };
+  }
+
+  return null;
 }
 
 function toDateInputValue(date: Date) {
@@ -167,6 +199,7 @@ function App() {
   const [scheduleAlert, setScheduleAlert] = useState<ScheduleAlert | null>(null);
   const [dismissedScheduleAlerts, setDismissedScheduleAlerts] = useState<string[]>([]);
   const [showEventModal, setShowEventModal] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState<DeleteConfirmation | null>(null);
 
   const displayName = profile?.nickname || profile?.firstName || getFirstName(session);
   const selectedDateObject = parseISO(`${selectedDate}T00:00:00`);
@@ -373,6 +406,11 @@ function App() {
       setEventError('That time has already passed. Choose a remaining time slot.');
       return;
     }
+    const conflict = findScheduleConflict(data, eventStart, eventEnd);
+    if (conflict) {
+      setEventError(`That time overlaps with "${conflict.title}" from ${conflict.range}. Choose an open focus time.`);
+      return;
+    }
 
     const event: WeeklyEvent = {
       id: makeId(),
@@ -442,24 +480,27 @@ function App() {
     const event = data.events.find((item) => item.id === eventId);
     if (!event) return;
 
-    const confirmed = window.confirm(`Delete "${event.title}"? This cannot be undone.`);
-    if (!confirmed) return;
+    setDeleteConfirmation({ id: event.id, title: event.title, type: 'event' });
+  }
 
+  function confirmDeleteEvent(eventId: string) {
     const nextData = {
       ...data,
       events: data.events.filter((item) => item.id !== eventId),
     };
 
     applySchedule(nextData, undefined, false);
+    setDeleteConfirmation(null);
   }
 
   function deleteTask(taskId: string) {
     const task = data.tasks.find((item) => item.id === taskId);
     if (!task) return;
 
-    const confirmed = window.confirm(`Delete "${task.title}"? This cannot be undone.`);
-    if (!confirmed) return;
+    setDeleteConfirmation({ id: task.id, title: task.title, type: 'task' });
+  }
 
+  function confirmDeleteTask(taskId: string) {
     const nextData = {
       ...data,
       tasks: data.tasks.filter((item) => item.id !== taskId),
@@ -468,6 +509,16 @@ function App() {
     setDismissedScheduleAlerts((taskIds) => taskIds.filter((dismissedTaskId) => dismissedTaskId !== taskId));
     if (scheduleAlert?.taskId === taskId) setScheduleAlert(null);
     applySchedule(nextData, undefined, false);
+    setDeleteConfirmation(null);
+  }
+
+  function confirmDelete() {
+    if (!deleteConfirmation) return;
+    if (deleteConfirmation.type === 'event') {
+      confirmDeleteEvent(deleteConfirmation.id);
+      return;
+    }
+    confirmDeleteTask(deleteConfirmation.id);
   }
 
   function refitTaskToDate(taskId: string, date: string) {
@@ -628,6 +679,13 @@ function App() {
     <div className="min-h-screen bg-ink text-zinc-800">
       <div className="fixed inset-0 bg-ink" />
       {showConfetti ? <Confetti /> : null}
+      {deleteConfirmation ? (
+        <DeleteConfirmationModal
+          item={deleteConfirmation}
+          onCancel={() => setDeleteConfirmation(null)}
+          onConfirm={confirmDelete}
+        />
+      ) : null}
       {showGuestNudge ? (
         <GuestNudge onClose={() => setShowGuestNudge(false)} onSignIn={signInWithGoogle} />
       ) : null}
@@ -1539,6 +1597,43 @@ function EventModal({
   );
 }
 
+function DeleteConfirmationModal({
+  item,
+  onCancel,
+  onConfirm,
+}: {
+  item: DeleteConfirmation;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="modal-backdrop">
+      <div className="modal max-w-sm">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-hibiscus">Confirm delete</p>
+            <h2 className="mt-1 text-xl font-bold text-zinc-900">Delete this {item.type}?</h2>
+          </div>
+          <button className="icon-action" title="Close" onClick={onCancel}>
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <p className="mt-4 text-sm leading-6 text-zinc-600">
+          This will remove <span className="font-semibold text-zinc-900">"{item.title}"</span> from Dynamic Anchor.
+        </p>
+        <div className="mt-5 flex flex-wrap gap-2">
+          <button className="btn-primary bg-flame hover:bg-hibiscus" onClick={onConfirm}>
+            Delete
+          </button>
+          <button className="btn-secondary" onClick={onCancel}>
+            Keep it
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ScheduleAlertModal({
   alert,
   onClose,
@@ -1680,17 +1775,26 @@ function TaskEditModal({
 function Confetti() {
   return (
     <div className="pointer-events-none fixed inset-0 z-50 overflow-hidden">
-      {Array.from({ length: 56 }, (_, index) => (
-        <span
-          className="confetti"
-          key={index}
-          style={{
-            ['--angle' as string]: `${index * 17}deg`,
-            ['--distance' as string]: `${150 + (index % 9) * 18}px`,
-            animationDelay: `${(index % 8) * 0.025}s`,
-          }}
-        />
-      ))}
+      {Array.from({ length: 84 }, (_, index) => {
+        const angle = (index / 84) * Math.PI * 2;
+        const distance = 120 + (index % 12) * 18;
+        const drift = (index % 5) * 8;
+        const x = Math.cos(angle) * (distance + drift);
+        const y = Math.sin(angle) * distance;
+
+        return (
+          <span
+            className="confetti"
+            key={index}
+            style={{
+              ['--x' as string]: `${x}px`,
+              ['--y' as string]: `${y}px`,
+              ['--spin' as string]: `${180 + (index % 7) * 80}deg`,
+              animationDelay: `${(index % 6) * 0.015}s`,
+            }}
+          />
+        );
+      })}
     </div>
   );
 }
