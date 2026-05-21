@@ -158,6 +158,7 @@ function App() {
   const [eventError, setEventError] = useState('');
   const [scheduleAlert, setScheduleAlert] = useState<ScheduleAlert | null>(null);
   const [dismissedScheduleAlerts, setDismissedScheduleAlerts] = useState<string[]>([]);
+  const [showEventModal, setShowEventModal] = useState(false);
 
   const displayName = profile?.nickname || profile?.firstName || getFirstName(session);
   const selectedDateObject = parseISO(`${selectedDate}T00:00:00`);
@@ -300,10 +301,6 @@ function App() {
     addTaskFromForm(taskForm);
   }
 
-  function addTaskFromSchedule() {
-    addTaskFromForm({ ...taskForm, dueDate: selectedDate });
-  }
-
   function openTaskEditor(task: Task) {
     setEditingTask(task);
     setEditForm(taskToForm(task));
@@ -367,6 +364,19 @@ function App() {
     const nextData = { ...data, events: [...data.events, event] };
     applySchedule(nextData);
     setEventForm({ ...emptyEvent, date: eventForm.date });
+    setShowEventModal(false);
+  }
+
+  function openEventModal(date: string, startTime: string) {
+    const startMinutes = minutesFromTime(startTime);
+    setEventError('');
+    setEventForm({
+      ...emptyEvent,
+      date,
+      startTime,
+      endTime: toTimeInputValue(startMinutes + 60),
+    });
+    setShowEventModal(true);
   }
 
   function completeTask(taskId: string) {
@@ -564,6 +574,15 @@ function App() {
           onWakeEarlier={adjustWakeEarlier}
         />
       ) : null}
+      {showEventModal ? (
+        <EventModal
+          eventError={eventError}
+          eventForm={eventForm}
+          onAddEvent={addEvent}
+          onClose={() => setShowEventModal(false)}
+          onEventFormChange={setEventForm}
+        />
+      ) : null}
 
       <main className="relative mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-5 sm:px-6 lg:px-8">
         <header className="flex flex-col gap-4 rounded-lg border border-line bg-night/88 p-4 shadow-glow backdrop-blur md:flex-row md:items-center md:justify-between">
@@ -620,15 +639,13 @@ function App() {
             events={data.events}
             onComplete={completeTask}
             onIncomplete={markIncomplete}
-            onQuickAdd={addTaskFromSchedule}
-            onQuickFormChange={setTaskForm}
+            onOpenEventModal={openEventModal}
             routine={data.routine}
             selectedCompletedTasks={selectedCompletedTasks}
             selectedDate={selectedDate}
             selectedScheduledTasks={selectedScheduledTasks}
             setSelectedDate={setSelectedDate}
             scheduledTasks={scheduledTasks}
-            taskForm={taskForm}
           />
         ) : null}
 
@@ -647,11 +664,7 @@ function App() {
         {activeTab === 'routine' ? (
           <RoutineView
             data={data}
-            eventForm={eventForm}
-            eventError={eventError}
-            onAddEvent={addEvent}
             onDataChange={updateData}
-            onEventFormChange={setEventForm}
           />
         ) : null}
 
@@ -667,28 +680,24 @@ function ScheduleView({
   events,
   onComplete,
   onIncomplete,
-  onQuickAdd,
-  onQuickFormChange,
+  onOpenEventModal,
   routine,
   selectedCompletedTasks,
   selectedDate,
   selectedScheduledTasks,
   setSelectedDate,
   scheduledTasks,
-  taskForm,
 }: {
   events: WeeklyEvent[];
   onComplete: (taskId: string) => void;
   onIncomplete: (taskId: string) => void;
-  onQuickAdd: () => void;
-  onQuickFormChange: (form: typeof emptyTask) => void;
+  onOpenEventModal: (date: string, startTime: string) => void;
   routine: AppData['routine'];
   selectedCompletedTasks: Task[];
   selectedDate: string;
   selectedScheduledTasks: Task[];
   setSelectedDate: (date: string) => void;
   scheduledTasks: Task[];
-  taskForm: typeof emptyTask;
 }) {
   const visibleDate = parseISO(`${selectedDate}T00:00:00`);
   const wake = dateWithTime(visibleDate, routine.wakeTime);
@@ -719,11 +728,6 @@ function ScheduleView({
             </button>
           </div>
         </div>
-        <QuickAddTask
-          form={{ ...taskForm, dueDate: selectedDate }}
-          onAdd={onQuickAdd}
-          onChange={(nextForm) => onQuickFormChange({ ...nextForm, dueDate: selectedDate })}
-        />
         <div className="mt-5 grid gap-2">
           {hours.map((hour) => {
             const nextHour = addHours(hour, 1);
@@ -779,7 +783,9 @@ function ScheduleView({
                     />
                   ))}
                   {!hourTasks.length && !hourEvents.length && !routineMarkers.length ? (
-                    <div className="timeline-empty">Open focus time</div>
+                    <button className="timeline-empty text-left" onDoubleClick={() => onOpenEventModal(selectedDate, format(hour, 'HH:mm'))}>
+                      Open focus time
+                    </button>
                   ) : null}
                 </div>
               </div>
@@ -815,50 +821,6 @@ function SummaryList({ label, tasks }: { label: string; tasks: Task[] }) {
           </div>
         ))}
         {!tasks.length ? <div className="text-sm text-zinc-500">Nothing here for this date.</div> : null}
-      </div>
-    </div>
-  );
-}
-
-function QuickAddTask({
-  form,
-  onAdd,
-  onChange,
-}: {
-  form: typeof emptyTask;
-  onAdd: () => void;
-  onChange: (form: typeof emptyTask) => void;
-}) {
-  return (
-    <div className="mt-5 rounded-lg border border-line bg-white/[0.03] p-3">
-      <div className="grid gap-3 lg:grid-cols-[1.2fr_0.9fr_0.9fr_auto] lg:items-end">
-        <Input label="Add task here" value={form.title} onChange={(title) => onChange({ ...form, title })} />
-        <EstimatedTimeInput value={form.estimateMinutes} onChange={(estimateMinutes) => onChange({ ...form, estimateMinutes })} />
-        <TimeSelect label="Due time" value={form.dueTime} onChange={(dueTime) => onChange({ ...form, dueTime })} />
-        <button className="btn-primary h-10" onClick={onAdd}>
-          <Plus className="h-4 w-4" />
-          Add
-        </button>
-      </div>
-      <div className="mt-3 grid gap-3 sm:grid-cols-2">
-        <Select
-          label="Importance"
-          value={form.importance}
-          options={[
-            ['important', 'Important'],
-            ['not-important', 'Not important'],
-          ]}
-          onChange={(importance) => onChange({ ...form, importance: importance as ImportanceLevel })}
-        />
-        <Select
-          label="Urgency"
-          value={form.urgency}
-          options={[
-            ['urgent', 'Urgent'],
-            ['not-urgent', 'Not urgent'],
-          ]}
-          onChange={(urgency) => onChange({ ...form, urgency: urgency as UrgencyLevel })}
-        />
       </div>
     </div>
   );
@@ -989,18 +951,10 @@ function TaskView({
 
 function RoutineView({
   data,
-  eventForm,
-  eventError,
-  onAddEvent,
   onDataChange,
-  onEventFormChange,
 }: {
   data: AppData;
-  eventForm: typeof emptyEvent;
-  eventError: string;
-  onAddEvent: () => void;
   onDataChange: (data: AppData) => void;
-  onEventFormChange: (form: typeof emptyEvent) => void;
 }) {
   function updateRoutine(nextRoutine: AppData['routine']) {
     const nextData = { ...data, routine: nextRoutine };
@@ -1016,19 +970,6 @@ function RoutineView({
             <TimeSelect label="Wake-up time" value={data.routine.wakeTime} onChange={(wakeTime) => updateRoutine({ ...data.routine, wakeTime })} />
             <TimeSelect label="Sleep time" value={data.routine.sleepTime} onChange={(sleepTime) => updateRoutine({ ...data.routine, sleepTime })} />
           </div>
-          <div className="h-px bg-line" />
-          <Input label="Event title" value={eventForm.title} onChange={(title) => onEventFormChange({ ...eventForm, title })} />
-          <div className="grid gap-3 sm:grid-cols-3">
-            <Input label="Date" type="date" value={eventForm.date} onChange={(date) => onEventFormChange({ ...eventForm, date })} />
-            <TimeSelect label="Start" value={eventForm.startTime} onChange={(startTime) => onEventFormChange({ ...eventForm, startTime })} />
-            <TimeSelect label="End" value={eventForm.endTime} onChange={(endTime) => onEventFormChange({ ...eventForm, endTime })} />
-          </div>
-          <Input label="Location or note" value={eventForm.location} onChange={(location) => onEventFormChange({ ...eventForm, location })} />
-          {eventError ? <p className="text-sm font-medium text-amber-200">{eventError}</p> : null}
-          <button className="btn-primary w-full justify-center" onClick={onAddEvent}>
-            <Plus className="h-4 w-4" />
-            Add event
-          </button>
         </div>
       </div>
 
@@ -1338,6 +1279,58 @@ function NicknameModal({
           </button>
           <button className="btn-secondary" onClick={onSkip}>
             Skip
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EventModal({
+  eventError,
+  eventForm,
+  onAddEvent,
+  onClose,
+  onEventFormChange,
+}: {
+  eventError: string;
+  eventForm: typeof emptyEvent;
+  onAddEvent: () => void;
+  onClose: () => void;
+  onEventFormChange: (form: typeof emptyEvent) => void;
+}) {
+  return (
+    <div className="modal-backdrop">
+      <div className="modal max-w-2xl">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-bold text-white">Add event</h2>
+            <p className="mt-1 text-sm text-zinc-300">
+              {format(parseISO(`${eventForm.date}T00:00:00`), 'EEE, MMM d')} • {formatClockTime(eventForm.startTime)}
+            </p>
+          </div>
+          <button className="icon-action" title="Close" onClick={onClose}>
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="mt-5 grid gap-3">
+          <Input label="Event title" value={eventForm.title} onChange={(title) => onEventFormChange({ ...eventForm, title })} />
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Input label="Date" type="date" value={eventForm.date} onChange={(date) => onEventFormChange({ ...eventForm, date })} />
+            <TimeSelect label="Start" value={eventForm.startTime} onChange={(startTime) => onEventFormChange({ ...eventForm, startTime })} />
+            <TimeSelect label="End" value={eventForm.endTime} onChange={(endTime) => onEventFormChange({ ...eventForm, endTime })} />
+          </div>
+          <Input label="Location or note" value={eventForm.location} onChange={(location) => onEventFormChange({ ...eventForm, location })} />
+          {eventError ? <p className="text-sm font-medium text-amber-200">{eventError}</p> : null}
+        </div>
+
+        <div className="mt-5 flex flex-wrap gap-2">
+          <button className="btn-primary" onClick={onAddEvent}>
+            Add event
+          </button>
+          <button className="btn-secondary" onClick={onClose}>
+            Cancel
           </button>
         </div>
       </div>
