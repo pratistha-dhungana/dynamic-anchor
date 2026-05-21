@@ -183,7 +183,9 @@ function App() {
     .filter((task) => task.status === 'complete')
     .sort((a, b) => String(b.completedAt).localeCompare(String(a.completedAt)));
   const selectedCompletedTasks = completedTasks.filter(
-    (task) => task.completedAt && isSameDay(parseISO(task.completedAt), selectedDateObject),
+    (task) =>
+      (task.completedAt && isSameDay(parseISO(task.completedAt), selectedDateObject)) ||
+      (task.scheduledStart && isSameDay(parseISO(task.scheduledStart), selectedDateObject)),
   );
   const pastDueTasks = pendingTasks
     .filter(isTaskPastDue)

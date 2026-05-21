@@ -121,6 +121,7 @@ export function buildWeeklySchedule(data: AppData): Task[] {
 
   const candidates = data.tasks
     .filter((task) => task.status !== 'complete')
+    .filter((task) => !task.scheduledStart || !isBefore(parseISO(task.scheduledStart), weekStart))
     .map((task) => ({
       ...task,
       status: task.status === 'incomplete' ? 'pending' : task.status,
@@ -185,6 +186,7 @@ export function buildWeeklySchedule(data: AppData): Task[] {
 
   return data.tasks.map((task) => {
     if (task.status === 'complete') return task;
+    if (task.scheduledStart && isBefore(parseISO(task.scheduledStart), weekStart)) return task;
     return placed.find((candidate) => candidate.id === task.id) ?? task;
   });
 }
