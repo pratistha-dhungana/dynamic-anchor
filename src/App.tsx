@@ -554,7 +554,7 @@ function App() {
 
   return (
     <div className="min-h-screen bg-ink text-zinc-100">
-      <div className="fixed inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,138,179,0.24),transparent_32%),linear-gradient(135deg,rgba(255,255,255,0.05),transparent_35%)]" />
+      <div className="fixed inset-0 bg-ink" />
       {showConfetti ? <Confetti /> : null}
       {showGuestNudge ? (
         <GuestNudge onClose={() => setShowGuestNudge(false)} onSignIn={signInWithGoogle} />
@@ -596,7 +596,7 @@ function App() {
       ) : null}
 
       <main className="relative mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-5 sm:px-6 lg:px-8">
-        <header className="flex flex-col gap-4 rounded-lg border border-line bg-night/88 p-4 shadow-glow backdrop-blur md:flex-row md:items-center md:justify-between">
+        <header className="flex flex-col gap-4 rounded-lg border border-aura/60 bg-night p-4 shadow-glow md:flex-row md:items-center md:justify-between">
           <div>
             <div className="mb-2 flex items-center gap-2 text-sm font-medium text-blush">
               <Sparkles className="h-4 w-4" />
@@ -608,7 +608,7 @@ function App() {
             <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-300">
               Turn priorities into a realistic week that respects sleep, events, and the work that matters.
             </p>
-            {authMessage ? <p className="mt-2 max-w-2xl text-sm font-medium text-amber-200">{authMessage}</p> : null}
+            {authMessage ? <p className="mt-2 max-w-2xl text-sm font-medium text-flame">{authMessage}</p> : null}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <button className="btn-secondary" onClick={refitSchedule}>
@@ -768,15 +768,15 @@ function ScheduleView({
                 <div className="timeline-time">{format(hour, 'h a')}</div>
                 <div className="grid min-w-0 gap-2">
                   {routineMarkers.map((marker) => (
-                    <div className="rounded-lg border border-blush/25 bg-blush/10 p-3" key={marker.id}>
-                      <div className="font-semibold text-pink-100">{marker.label}</div>
-                      <div className="text-xs text-pink-100/75">{formatClockTime(marker.time)}</div>
+                    <div className="rounded-lg border border-hibiscus/35 bg-hibiscus/10 p-3" key={marker.id}>
+                      <div className="font-semibold text-white">{marker.label}</div>
+                      <div className="text-xs text-zinc-300">{formatClockTime(marker.time)}</div>
                     </div>
                   ))}
                   {hourEvents.map((event) => (
-                    <div className="rounded-lg border border-sky-300/25 bg-sky-300/10 p-3" key={event.id}>
-                      <div className="font-semibold text-sky-100">{event.title}</div>
-                      <div className="text-xs text-sky-100/75">
+                    <div className="rounded-lg border border-indigo/40 bg-indigo/20 p-3" key={event.id}>
+                      <div className="font-semibold text-white">{event.title}</div>
+                      <div className="text-xs text-zinc-300">
                         {formatClockTime(event.startTime)}-{formatClockTime(event.endTime)}
                       </div>
                     </div>
@@ -822,16 +822,16 @@ function ScheduleView({
 
 function PastDueList({ tasks }: { tasks: Task[] }) {
   return (
-    <div className="rounded-lg border border-red-300/25 bg-red-400/10 p-3 shadow-glow sm:p-4">
+    <div className="rounded-lg border border-flame/45 bg-flame/10 p-3 shadow-glow sm:p-4">
       <div className="flex items-baseline justify-between gap-3">
-        <h3 className="text-sm font-semibold uppercase tracking-[0.14em] text-red-200">Past due</h3>
+        <h3 className="text-sm font-semibold uppercase tracking-[0.14em] text-flame">Past due</h3>
         <span className="text-2xl font-bold text-white">{tasks.length}</span>
       </div>
       <div className="mt-3 grid gap-2">
         {tasks.slice(0, 6).map((task) => (
-          <div className="rounded-lg border border-red-200/20 bg-black/15 p-2.5" key={task.id}>
+          <div className="rounded-lg border border-flame/35 bg-black/15 p-2.5" key={task.id}>
             <div className="text-sm font-semibold text-white">{task.title}</div>
-            <div className="text-xs text-red-100/80">Due {formatDue(task)}</div>
+            <div className="text-xs text-zinc-300">Due {formatDue(task)}</div>
           </div>
         ))}
         {!tasks.length ? <div className="text-sm text-zinc-500">No overdue tasks.</div> : null}
@@ -849,7 +849,7 @@ function SummaryList({ label, tasks }: { label: string; tasks: Task[] }) {
       </div>
       <div className="mt-3 grid gap-2">
         {tasks.slice(0, 5).map((task) => (
-          <div className="rounded-lg border border-line bg-white/[0.03] p-2.5" key={task.id}>
+          <div className="rounded-lg border border-aura/45 bg-panel p-2.5" key={task.id}>
             <div className="text-sm font-semibold text-white">{task.title}</div>
             <div className="text-xs text-zinc-400">
               {task.scheduledStart ? format(parseISO(task.scheduledStart), 'h:mm a') : formatDateTime(task.completedAt)}
@@ -871,7 +871,7 @@ function EventSummaryList({ events }: { events: WeeklyEvent[] }) {
       </div>
       <div className="mt-3 grid gap-2">
         {events.slice(0, 5).map((event) => (
-          <div className="rounded-lg border border-line bg-white/[0.03] p-2.5" key={event.id}>
+          <div className="rounded-lg border border-aura/45 bg-panel p-2.5" key={event.id}>
             <div className="text-sm font-semibold text-white">{event.title}</div>
             <div className="text-xs text-zinc-400">
               {formatClockTime(event.startTime)}-{formatClockTime(event.endTime)}
@@ -925,7 +925,7 @@ function TaskView({
             <Input label="Deadline date" type="date" value={form.dueDate} onChange={(dueDate) => onFormChange({ ...form, dueDate })} />
             <TimeSelect label="Deadline time" value={form.dueTime} onChange={(dueTime) => onFormChange({ ...form, dueTime })} />
           </div>
-          <div className="rounded-lg border border-line bg-white/[0.03] p-3 text-sm text-zinc-300">
+          <div className="rounded-lg border border-aura/45 bg-panel p-3 text-sm text-zinc-300">
             <strong className="text-white">Urgent</strong> means the deadline is close or the task needs attention soon.
             <br />
             <strong className="text-white">Important</strong> means it has meaningful consequences, affects a major goal,
@@ -974,7 +974,7 @@ function TaskView({
                   <button className="icon-action" title="Edit task" onClick={() => onEdit(task)}>
                     <Pencil className="h-4 w-4" />
                   </button>
-                  <button className="icon-action text-red-200 hover:border-red-300/60 hover:text-red-200" title="Delete task" onClick={() => onDelete(task.id)}>
+                  <button className="icon-action text-flame hover:border-flame hover:text-flame" title="Delete task" onClick={() => onDelete(task.id)}>
                     <Trash2 className="h-4 w-4" />
                   </button>
                 </>
@@ -1018,7 +1018,7 @@ function RoutineView({
           {data.events
             .sort((a, b) => `${a.date}${a.startTime}`.localeCompare(`${b.date}${b.startTime}`))
             .map((event) => (
-              <div className="flex items-center justify-between gap-3 rounded-lg border border-line bg-white/[0.03] p-4" key={event.id}>
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-aura/45 bg-panel p-4" key={event.id}>
                 <div>
                   <h3 className="font-semibold text-white">{event.title}</h3>
                   <p className="mt-1 text-sm text-zinc-400">
@@ -1064,15 +1064,15 @@ function HistoryView({ onDelete, tasks }: { onDelete: (taskId: string) => void; 
       <SectionTitle eyebrow="Completed Items / History" title={`${tasks.length} completed anchors`} />
       <div className="mt-5 grid gap-3">
         {tasks.map((task) => (
-          <div className="rounded-lg border border-line bg-white/[0.03] p-4" key={task.id}>
+          <div className="rounded-lg border border-aura/45 bg-panel p-4" key={task.id}>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="text-xs font-bold uppercase tracking-[0.16em] text-emerald-200">Completed task</p>
+                <p className="text-xs font-bold uppercase tracking-[0.16em] text-hibiscus">Completed task</p>
                 <h3 className="mt-1 text-lg font-bold text-white">{task.title}</h3>
               </div>
               <div className="flex items-center gap-2">
-                <span className="status-pill bg-emerald-400/15 text-emerald-200">complete</span>
-                <button className="icon-action text-red-200 hover:border-red-300/60 hover:text-red-200" title="Delete task" onClick={() => onDelete(task.id)}>
+                <span className="status-pill bg-indigo/25 text-white">complete</span>
+                <button className="icon-action text-flame hover:border-flame hover:text-flame" title="Delete task" onClick={() => onDelete(task.id)}>
                   <Trash2 className="h-4 w-4" />
                 </button>
               </div>
@@ -1094,7 +1094,7 @@ function TaskCard({ actions, compact = false, task }: { actions?: React.ReactNod
   const description = task.description && task.description.length > 88 ? `${task.description.slice(0, 88)}...` : task.description;
 
   return (
-    <article className="rounded-lg border border-line bg-zinc-950/35 p-4 transition hover:border-blush/50">
+    <article className="rounded-lg border border-aura/45 bg-panel p-4 transition hover:border-hibiscus/60">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className={`${compact ? 'text-base' : 'text-lg'} break-words font-bold text-white`}>{task.title}</h3>
@@ -1122,13 +1122,13 @@ function TimelineTaskBlock({ actions, task }: { actions?: React.ReactNode; task:
 
   return (
     <article
-      className="rounded-lg border border-blush/35 bg-blush/10 px-3 py-2 transition hover:border-blush/70"
+      className="rounded-lg border border-hibiscus/35 bg-hibiscus/10 px-3 py-2 transition hover:border-hibiscus/70"
       style={{ minHeight: `${durationHeight}px` }}
     >
       <div className="flex h-full items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="break-words text-sm font-bold text-white">{task.title}</h3>
-          <p className="mt-1 text-xs font-medium text-pink-100/80">
+          <p className="mt-1 text-xs font-medium text-zinc-300">
             {task.scheduledStart ? format(parseISO(task.scheduledStart), 'h:mm a') : 'Unscheduled'}-
             {task.scheduledEnd ? format(parseISO(task.scheduledEnd), 'h:mm a') : ''} • {formatDuration(task.estimateMinutes)}
           </p>
@@ -1149,7 +1149,7 @@ function SectionTitle({ eyebrow, title }: { eyebrow: string; title: string }) {
 }
 
 function EmptyState({ text }: { text: string }) {
-  return <div className="rounded-lg border border-dashed border-line p-5 text-center text-sm text-zinc-500">{text}</div>;
+  return <div className="rounded-lg border border-dashed border-aura/55 p-5 text-center text-sm text-zinc-500">{text}</div>;
 }
 
 function Input({
@@ -1361,7 +1361,7 @@ function EventModal({
             <TimeSelect label="End" value={eventForm.endTime} onChange={(endTime) => onEventFormChange({ ...eventForm, endTime })} />
           </div>
           <Input label="Location or note" value={eventForm.location} onChange={(location) => onEventFormChange({ ...eventForm, location })} />
-          {eventError ? <p className="text-sm font-medium text-amber-200">{eventError}</p> : null}
+          {eventError ? <p className="text-sm font-medium text-flame">{eventError}</p> : null}
         </div>
 
         <div className="mt-5 flex flex-wrap gap-2">
@@ -1414,7 +1414,7 @@ function ScheduleAlertModal({
         </div>
 
         {isHighPriority ? (
-          <div className="mt-5 grid gap-2 rounded-lg border border-line bg-white/[0.03] p-3">
+          <div className="mt-5 grid gap-2 rounded-lg border border-aura/45 bg-panel p-3">
             <p className="text-sm text-zinc-300">Since this is future planning, you can make more room:</p>
             <button className="btn-primary justify-center" onClick={() => onWakeEarlier(alert.taskId)}>
               Wake up 1 hour earlier

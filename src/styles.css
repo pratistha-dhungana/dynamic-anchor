@@ -6,7 +6,7 @@
   color-scheme: dark;
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: #08070a;
+  background: #130d18;
 }
 
 * {
@@ -17,7 +17,7 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background: #08070a;
+  background: #130d18;
 }
 
 button,
@@ -29,27 +29,27 @@ textarea {
 
 @layer components {
   .panel {
-    @apply rounded-lg border border-line bg-night p-4 shadow-glow backdrop-blur sm:p-5;
+    @apply rounded-lg border border-aura/55 bg-night p-4 shadow-glow sm:p-5;
   }
 
   .panel-compact {
-    @apply rounded-lg border border-line bg-night p-3 shadow-glow backdrop-blur sm:p-4;
+    @apply rounded-lg border border-aura/55 bg-night p-3 shadow-glow sm:p-4;
   }
 
   .btn-primary {
-    @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-blush px-4 py-2 text-sm font-bold text-zinc-950 transition hover:bg-pink-300 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-hibiscus px-4 py-2 text-sm font-bold text-white transition hover:bg-flame disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .btn-secondary {
-    @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-line bg-white/[0.04] px-4 py-2 text-sm font-semibold text-zinc-100 transition hover:border-blush/60 hover:bg-white/[0.07];
+    @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-aura/70 bg-panel px-4 py-2 text-sm font-semibold text-zinc-100 transition hover:border-hibiscus hover:bg-aura/35;
   }
 
   .tab-button {
-    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-line bg-panel/80 px-3 py-2 text-sm font-semibold text-zinc-300 transition hover:border-blush/50 hover:text-white;
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-aura/60 bg-panel px-3 py-2 text-sm font-semibold text-zinc-300 transition hover:border-hibiscus/70 hover:text-white;
   }
 
   .tab-active {
-    @apply border-blush/60 bg-roseglass text-white;
+    @apply border-hibiscus bg-indigo/45 text-white;
   }
 
   .field {
@@ -57,19 +57,19 @@ textarea {
   }
 
   .input {
-    @apply w-full rounded-lg border border-line bg-zinc-950/50 px-3 py-2.5 text-sm text-white outline-none transition placeholder:text-zinc-600 focus:border-blush/70 focus:ring-2 focus:ring-blush/20;
+    @apply w-full rounded-lg border border-aura/65 bg-ink px-3 py-2.5 text-sm text-white outline-none transition placeholder:text-zinc-600 focus:border-hibiscus focus:ring-2 focus:ring-hibiscus/15;
   }
 
   .chip {
-    @apply rounded-full border border-line bg-white/[0.04] px-2.5 py-1 font-semibold text-zinc-300;
+    @apply rounded-full border border-aura/55 bg-panel px-2.5 py-1 font-semibold text-zinc-300;
   }
 
   .status-pill {
-    @apply rounded-full bg-blush/15 px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-blush;
+    @apply rounded-full bg-hibiscus/15 px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-hibiscus;
   }
 
   .icon-action {
-    @apply inline-flex h-9 w-9 items-center justify-center rounded-lg border border-line bg-white/[0.04] text-zinc-100 transition hover:border-blush/60 hover:text-blush;
+    @apply inline-flex h-9 w-9 items-center justify-center rounded-lg border border-aura/65 bg-panel text-zinc-100 transition hover:border-hibiscus hover:text-hibiscus;
   }
 
   .modal-backdrop {
@@ -77,11 +77,11 @@ textarea {
   }
 
   .modal {
-    @apply w-full max-w-md rounded-lg border border-line bg-night p-5 shadow-glow;
+    @apply w-full max-w-md rounded-lg border border-aura/65 bg-night p-5 shadow-glow;
   }
 
   .timeline-row {
-    @apply grid grid-cols-[4rem_minmax(0,1fr)] gap-3 rounded-lg border border-line bg-white/[0.025] p-3 sm:grid-cols-[5rem_minmax(0,1fr)];
+    @apply grid grid-cols-[4rem_minmax(0,1fr)] gap-3 rounded-lg border border-aura/45 bg-panel/65 p-3 sm:grid-cols-[5rem_minmax(0,1fr)];
   }
 
   .timeline-time {
@@ -89,7 +89,7 @@ textarea {
   }
 
   .timeline-empty {
-    @apply rounded-lg border border-dashed border-line px-3 py-4 text-sm text-zinc-600;
+    @apply rounded-lg border border-dashed border-aura/55 px-3 py-4 text-sm text-zinc-500 transition hover:border-hibiscus/70 hover:text-zinc-300;
   }
 }
 
@@ -99,16 +99,16 @@ textarea {
   width: 9px;
   height: 16px;
   border-radius: 3px;
-  background: #ff8ab3;
+  background: #ea44d4;
   animation: confetti-fall 1.1s ease-out forwards;
 }
 
 .confetti:nth-child(3n) {
-  background: #fef3c7;
+  background: #dd3027;
 }
 
 .confetti:nth-child(4n) {
-  background: #a7f3d0;
+  background: #5848b3;
 }
 
 @keyframes confetti-fall {

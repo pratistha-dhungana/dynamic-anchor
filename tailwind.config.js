@@ -4,15 +4,19 @@ export default {
   theme: {
     extend: {
       colors: {
-        ink: '#08070a',
-        night: '#111017',
-        panel: '#17151f',
-        line: '#2b2635',
-        blush: '#ff8ab3',
-        roseglass: '#3a1f30',
+        ink: '#130D18',
+        night: '#1D1424',
+        panel: '#261B31',
+        line: '#733D6F',
+        blush: '#EA44D4',
+        roseglass: '#33265A',
+        hibiscus: '#EA44D4',
+        flame: '#DD3027',
+        aura: '#733D6F',
+        indigo: '#5848B3',
       },
       boxShadow: {
-        glow: '0 0 40px rgba(255, 138, 179, 0.18)',
+        glow: '0 1px 0 rgba(115, 61, 111, 0.35)',
       },
     },
   },
