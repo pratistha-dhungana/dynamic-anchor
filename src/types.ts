@@ -61,6 +61,7 @@ export interface Profile {
 export interface AppData {
   routine: Routine;
   routineEvents?: RoutineEvent[];
+  routineCompletions?: Record<string, string>;
   events: WeeklyEvent[];
   tasks: Task[];
 }

@@ -10,6 +10,7 @@ export const defaultData: AppData = {
     restMinutes: 15,
   },
   routineEvents: [],
+  routineCompletions: {},
   events: [],
   tasks: [],
 };
@@ -23,6 +24,7 @@ function normalizeData(data: Partial<AppData>): AppData {
       ...data.routine,
     },
     routineEvents: data.routineEvents || [],
+    routineCompletions: data.routineCompletions || {},
     events: data.events || [],
     tasks: data.tasks || [],
   };

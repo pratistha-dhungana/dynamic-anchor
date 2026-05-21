@@ -87,6 +87,9 @@ const weekdayOptions = [
   { value: 6, label: 'Sat' },
 ];
 
+const currentBlockColor = '#FF69B4';
+const scheduledBlockColor = '#FFB6C1';
+
 function makeId() {
   return crypto.randomUUID();
 }
@@ -160,14 +163,27 @@ function findScheduleConflict(data: AppData, start: Date, end: Date) {
   return null;
 }
 
-function routineEventInstance(event: RoutineEvent, date: Date): WeeklyEvent {
+function routineCompletionKey(eventId: string, date: string) {
+  return `${eventId}:${date}`;
+}
+
+function parseRoutineInstanceId(instanceId: string) {
+  const [, eventId, date] = instanceId.split(':');
+  return { date, eventId };
+}
+
+function routineEventInstance(event: RoutineEvent, date: Date, completions: Record<string, string> = {}): WeeklyEvent {
+  const dateKey = format(date, 'yyyy-MM-dd');
+  const completedAt = completions[routineCompletionKey(event.id, dateKey)];
   return {
-    id: `routine-${event.id}-${format(date, 'yyyy-MM-dd')}`,
+    id: `routine:${event.id}:${dateKey}`,
     title: event.title,
-    date: format(date, 'yyyy-MM-dd'),
+    date: dateKey,
     startTime: event.startTime,
     endTime: event.endTime,
     location: event.location,
+    completed: Boolean(completedAt),
+    completedAt,
   };
 }
 
@@ -325,6 +341,7 @@ function App() {
           ...remoteData,
           routine: { ...defaultData.routine, ...remoteData.routine },
           routineEvents: remoteData.routineEvents || [],
+          routineCompletions: remoteData.routineCompletions || {},
         });
       }
       setCloudLoaded(true);
@@ -382,12 +399,9 @@ function App() {
     const nextData = {
       ...data,
       tasks: data.tasks.map((task) =>
-        task.status !== 'complete' &&
-        task.scheduledStart &&
-        isSameDay(parseISO(task.scheduledStart), selectedDateObject)
+        task.status !== 'complete'
           ? {
               ...task,
-              dueDate: selectedDate,
               status: 'incomplete' as const,
               scheduledStart: undefined,
               scheduledEnd: undefined,
@@ -530,6 +544,26 @@ function App() {
   }
 
   function toggleEventComplete(eventId: string) {
+    if (eventId.startsWith('routine:')) {
+      const { date, eventId: routineId } = parseRoutineInstanceId(eventId);
+      const key = routineCompletionKey(routineId, date);
+      const existingCompletion = data.routineCompletions?.[key];
+      const nextCompletions = { ...(data.routineCompletions || {}) };
+
+      if (existingCompletion) {
+        delete nextCompletions[key];
+      } else {
+        nextCompletions[key] = new Date().toISOString();
+      }
+
+      updateData({ ...data, routineCompletions: nextCompletions });
+      if (!existingCompletion) {
+        setShowConfetti(true);
+        window.setTimeout(() => setShowConfetti(false), 1200);
+      }
+      return;
+    }
+
     const event = data.events.find((item) => item.id === eventId);
     const nextData = {
       ...data,
@@ -842,7 +876,10 @@ function App() {
               <button
                 className={`tab-button ${activeTab === tab.id ? 'tab-active' : ''}`}
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => {
+                  setActiveTab(tab.id);
+                  if (tab.id === 'schedule') setSelectedDate(toDateInputValue(new Date()));
+                }}
               >
                 <Icon className="h-4 w-4" />
                 {tab.label}
@@ -863,6 +900,7 @@ function App() {
             onToggleEventComplete={toggleEventComplete}
             pastDueTasks={pastDueTasks}
             routine={data.routine}
+            routineCompletions={data.routineCompletions || {}}
             routineEvents={data.routineEvents || []}
             selectedCompletedTasks={selectedCompletedTasks}
             selectedDate={selectedDate}
@@ -910,6 +948,7 @@ function ScheduleView({
   onToggleEventComplete,
   pastDueTasks,
   routine,
+  routineCompletions,
   routineEvents,
   selectedCompletedTasks,
   selectedDate,
@@ -926,6 +965,7 @@ function ScheduleView({
   onToggleEventComplete: (eventId: string) => void;
   pastDueTasks: Task[];
   routine: AppData['routine'];
+  routineCompletions: Record<string, string>;
   routineEvents: RoutineEvent[];
   selectedCompletedTasks: Task[];
   selectedDate: string;
@@ -939,7 +979,7 @@ function ScheduleView({
   const hours = Array.from({ length: hourCount }, (_, index) => addHours(wake, index));
   const selectedRoutineEvents = routineEvents
     .filter((event) => event.daysOfWeek.includes(visibleDate.getDay()))
-    .map((event) => routineEventInstance(event, visibleDate));
+    .map((event) => routineEventInstance(event, visibleDate, routineCompletions));
   const selectedEvents = [
     ...events.filter((event) => isSameDay(parseISO(`${event.date}T00:00:00`), visibleDate)),
     ...selectedRoutineEvents,
@@ -947,6 +987,8 @@ function ScheduleView({
   const selectedUpcomingEvents = selectedEvents.filter((event) => !event.completed);
   const selectedCompletedEvents = selectedEvents.filter((event) => event.completed);
   const selectedOpenScheduledTasks = selectedScheduledTasks.filter((task) => task.status !== 'complete');
+  const todayValue = toDateInputValue(new Date());
+  const isSelectedToday = selectedDate === todayValue;
   const changeDateBy = (days: number) => setSelectedDate(toDateInputValue(addDays(visibleDate, days)));
   const pixelsPerHour = 100;
   const pixelsPerMinute = pixelsPerHour / 60;
@@ -963,6 +1005,10 @@ function ScheduleView({
     const snappedMinutes = Math.max(0, Math.min(hourCount * 60 - 15, Math.floor(rawMinutes / 15) * 15));
     onOpenEventModal(selectedDate, toTimeInputValue(minutesFromTime(routine.wakeTime) + snappedMinutes));
   };
+  const blockColor = (start: Date, end: Date) => {
+    const now = new Date();
+    return isSameDay(start, now) && start <= now && now < end ? currentBlockColor : scheduledBlockColor;
+  };
 
   return (
     <section className="grid gap-4 lg:grid-cols-[1.3fr_0.7fr]">
@@ -972,17 +1018,21 @@ function ScheduleView({
             eyebrow="Schedule"
             title={selectedScheduledTasks.length ? 'Hour-by-hour anchors' : 'No tasks scheduled for this date'}
           />
-          <div className="flex flex-wrap items-center gap-2">
-            <button className="icon-action" title="Previous day" onClick={() => changeDateBy(-1)}>
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <Input label="Date" type="date" value={selectedDate} onChange={setSelectedDate} />
-            <button className="icon-action" title="Next day" onClick={() => changeDateBy(1)}>
-              <ChevronRight className="h-4 w-4" />
-            </button>
-            <button className="btn-secondary" onClick={() => setSelectedDate(toDateInputValue(new Date()))}>
-              Today
-            </button>
+          <div className="grid gap-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <button className="icon-action" title="Previous day" onClick={() => changeDateBy(-1)}>
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <input className="input h-10 w-auto min-w-40" type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} />
+              <button className="icon-action" title="Next day" onClick={() => changeDateBy(1)}>
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+            {!isSelectedToday ? (
+              <button className="w-fit text-xs font-semibold text-hibiscus hover:text-flame" onClick={() => setSelectedDate(todayValue)}>
+                Go back to today
+              </button>
+            ) : null}
           </div>
         </div>
         <p className="mt-4 rounded-lg border border-line bg-panel px-3 py-2 text-sm font-semibold text-zinc-600">
@@ -1021,14 +1071,14 @@ function ScheduleView({
             {selectedEvents.map((event) => {
               const start = dateWithTime(parseISO(`${event.date}T00:00:00`), event.startTime);
               const end = dateWithTime(parseISO(`${event.date}T00:00:00`), event.endTime);
-              const isRoutine = event.id.startsWith('routine-');
+              const isRoutine = event.id.startsWith('routine:');
 
               return (
                 <div
-                  className="absolute left-3 right-3 flex min-h-8 items-start justify-between gap-3 rounded-lg border border-indigo bg-indigo/10 p-2.5"
+                  className="absolute left-3 right-3 flex min-h-8 items-start justify-between gap-3 rounded-lg border border-hibiscus p-2.5"
                   key={event.id}
                   onDoubleClick={(clickEvent) => clickEvent.stopPropagation()}
-                  style={blockStyle(start, end)}
+                  style={{ ...blockStyle(start, end), backgroundColor: blockColor(start, end) }}
                 >
                   <div className={event.completed ? 'min-w-0 line-through decoration-flame decoration-2' : 'min-w-0'}>
                     <div className="truncate text-sm font-semibold text-zinc-900">{event.title}</div>
@@ -1037,20 +1087,15 @@ function ScheduleView({
                     </div>
                   </div>
                   <div className="flex shrink-0 gap-1.5">
-                    {isRoutine ? (
-                      <span className="chip">routine</span>
-                    ) : (
-                      <>
-                        <button className="icon-action" title="Mark event complete" onClick={() => onToggleEventComplete(event.id)}>
-                          <Check className="h-4 w-4" />
-                        </button>
-                        {!event.completed ? (
-                          <button className="icon-action text-flame hover:border-flame hover:text-flame" title="Delete event" onClick={() => onDeleteEvent(event.id)}>
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        ) : null}
-                      </>
-                    )}
+                    {isRoutine ? <span className="chip">routine</span> : null}
+                    <button className="icon-action" title="Mark event complete" onClick={() => onToggleEventComplete(event.id)}>
+                      <Check className="h-4 w-4" />
+                    </button>
+                    {!isRoutine && !event.completed ? (
+                      <button className="icon-action text-flame hover:border-flame hover:text-flame" title="Delete event" onClick={() => onDeleteEvent(event.id)}>
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               );
@@ -1063,7 +1108,10 @@ function ScheduleView({
                 <TimelineTaskBlock
                   key={task.id}
                   task={task}
-                  style={blockStyle(parseISO(task.scheduledStart), parseISO(task.scheduledEnd))}
+                  style={{
+                    ...blockStyle(parseISO(task.scheduledStart), parseISO(task.scheduledEnd)),
+                    backgroundColor: blockColor(parseISO(task.scheduledStart), parseISO(task.scheduledEnd)),
+                  }}
                   actions={
                     isComplete ? null : (
                       <>
@@ -1224,7 +1272,7 @@ function EventSummaryList({ events, onDeleteEvent }: { events: WeeklyEvent[]; on
                 {formatClockTime(event.startTime)}-{formatClockTime(event.endTime)}
               </div>
             </div>
-            {event.id.startsWith('routine-') ? (
+            {event.id.startsWith('routine:') ? (
               <span className="chip">routine</span>
             ) : (
               <button className="icon-action text-flame hover:border-flame hover:text-flame" title="Delete event" onClick={() => onDeleteEvent(event.id)}>
@@ -1418,6 +1466,24 @@ function RoutineView({
     routineDraft.wakeTime !== data.routine.wakeTime ||
     routineDraft.sleepTime !== data.routine.sleepTime ||
     (routineDraft.restMinutes ?? 15) !== (data.routine.restMinutes ?? 15);
+  const routineStreaks = (data.routineEvents || []).map((event) => {
+    let streak = 0;
+    const today = startOfDay(new Date());
+
+    for (let offset = 0; offset < 120; offset += 1) {
+      const day = addDays(today, -offset);
+      if (!event.daysOfWeek.includes(day.getDay())) continue;
+      const dayKey = format(day, 'yyyy-MM-dd');
+      if (data.routineCompletions?.[routineCompletionKey(event.id, dayKey)]) {
+        streak += 1;
+        continue;
+      }
+      break;
+    }
+
+    const total = Object.keys(data.routineCompletions || {}).filter((key) => key.startsWith(`${event.id}:`)).length;
+    return { event, streak, total };
+  });
 
   return (
     <section className="grid gap-4 lg:grid-cols-[0.85fr_1.15fr]">
@@ -1446,60 +1512,83 @@ function RoutineView({
           </button>
           {savedMessage ? <p className="rounded-lg border border-hibiscus bg-baby px-3 py-2 text-sm font-semibold text-zinc-900">{savedMessage}</p> : null}
           {hasRoutineChanges ? <p className="text-sm text-zinc-500">Press save to update the schedule.</p> : null}
+          <div className="mt-6 border-t border-line pt-5">
+            <SectionTitle eyebrow="Recurring Routine" title={`${(data.routineEvents || []).length} repeating blocks`} />
+            <div className="mt-5 grid gap-3">
+              <div className="rounded-lg border border-line bg-panel p-3">
+                <div className="grid gap-3">
+                  <Input label="Routine event" value={routineEventDraft.title} onChange={(title) => setRoutineEventDraft({ ...routineEventDraft, title })} />
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <TimeSelect label="Start" value={routineEventDraft.startTime} onChange={(startTime) => setRoutineEventDraft({ ...routineEventDraft, startTime })} />
+                    <TimeSelect label="End" value={routineEventDraft.endTime} onChange={(endTime) => setRoutineEventDraft({ ...routineEventDraft, endTime })} />
+                  </div>
+                  <Input label="Location or note" value={routineEventDraft.location} onChange={(location) => setRoutineEventDraft({ ...routineEventDraft, location })} />
+                  <div className="flex flex-wrap gap-2">
+                    {weekdayOptions.map((day) => (
+                      <button
+                        className={`rounded-lg border px-3 py-2 text-sm font-semibold ${
+                          routineEventDraft.daysOfWeek.includes(day.value)
+                            ? 'border-hibiscus bg-baby text-zinc-950'
+                            : 'border-line bg-night text-zinc-700 hover:border-hibiscus hover:bg-baby'
+                        }`}
+                        key={day.value}
+                        onClick={() => toggleRoutineDay(day.value)}
+                      >
+                        {day.label}
+                      </button>
+                    ))}
+                  </div>
+                  {routineEventError ? <p className="text-sm font-medium text-flame">{routineEventError}</p> : null}
+                  <button className="btn-primary justify-center" onClick={addRoutineEvent}>
+                    Add recurring routine
+                  </button>
+                </div>
+              </div>
+
+              {(data.routineEvents || [])
+                .sort((a, b) => `${a.daysOfWeek.join('')}${a.startTime}`.localeCompare(`${b.daysOfWeek.join('')}${b.startTime}`))
+                .map((event) => (
+                  <div className="flex items-center justify-between gap-3 rounded-lg border border-aura bg-panel p-4" key={event.id}>
+                    <div>
+                      <h3 className="font-semibold text-zinc-900">{event.title}</h3>
+                      <p className="mt-1 text-sm text-zinc-500">
+                        {event.daysOfWeek.map((day) => weekdayOptions.find((option) => option.value === day)?.label).join(', ')} • {formatClockTime(event.startTime)}-
+                        {formatClockTime(event.endTime)}
+                        {event.location ? ` • ${event.location}` : ''}
+                      </p>
+                    </div>
+                    <button className="icon-action text-flame hover:border-flame hover:text-flame" title="Delete recurring routine" onClick={() => deleteRoutineEvent(event.id)}>
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+              {!(data.routineEvents || []).length ? <EmptyState text="Add repeating commitments like gym, practice, or commute blocks." /> : null}
+            </div>
+          </div>
         </div>
       </div>
 
       <div className="panel">
-        <SectionTitle eyebrow="Recurring Routine" title={`${(data.routineEvents || []).length} repeating blocks`} />
+        <SectionTitle eyebrow="Routine Streaks" title="Days you showed up" />
         <div className="mt-5 grid gap-3">
-          <div className="rounded-lg border border-line bg-panel p-3">
-            <div className="grid gap-3">
-              <Input label="Routine event" value={routineEventDraft.title} onChange={(title) => setRoutineEventDraft({ ...routineEventDraft, title })} />
-              <div className="grid gap-3 sm:grid-cols-2">
-                <TimeSelect label="Start" value={routineEventDraft.startTime} onChange={(startTime) => setRoutineEventDraft({ ...routineEventDraft, startTime })} />
-                <TimeSelect label="End" value={routineEventDraft.endTime} onChange={(endTime) => setRoutineEventDraft({ ...routineEventDraft, endTime })} />
-              </div>
-              <Input label="Location or note" value={routineEventDraft.location} onChange={(location) => setRoutineEventDraft({ ...routineEventDraft, location })} />
-              <div className="flex flex-wrap gap-2">
-                {weekdayOptions.map((day) => (
-                  <button
-                    className={`rounded-lg border px-3 py-2 text-sm font-semibold ${
-                      routineEventDraft.daysOfWeek.includes(day.value)
-                        ? 'border-hibiscus bg-baby text-zinc-950'
-                        : 'border-line bg-night text-zinc-700 hover:border-hibiscus hover:bg-baby'
-                    }`}
-                    key={day.value}
-                    onClick={() => toggleRoutineDay(day.value)}
-                  >
-                    {day.label}
-                  </button>
-                ))}
-              </div>
-              {routineEventError ? <p className="text-sm font-medium text-flame">{routineEventError}</p> : null}
-              <button className="btn-primary justify-center" onClick={addRoutineEvent}>
-                Add recurring routine
-              </button>
-            </div>
-          </div>
-
-          {(data.routineEvents || [])
-            .sort((a, b) => `${a.daysOfWeek.join('')}${a.startTime}`.localeCompare(`${b.daysOfWeek.join('')}${b.startTime}`))
-            .map((event) => (
-              <div className="flex items-center justify-between gap-3 rounded-lg border border-aura bg-panel p-4" key={event.id}>
+          {routineStreaks.map(({ event, streak, total }) => (
+            <div className="rounded-lg border border-hibiscus bg-panel p-4" key={event.id}>
+              <div className="flex items-start justify-between gap-3">
                 <div>
                   <h3 className="font-semibold text-zinc-900">{event.title}</h3>
                   <p className="mt-1 text-sm text-zinc-500">
-                    {event.daysOfWeek.map((day) => weekdayOptions.find((option) => option.value === day)?.label).join(', ')} • {formatClockTime(event.startTime)}-
-                    {formatClockTime(event.endTime)}
-                    {event.location ? ` • ${event.location}` : ''}
+                    {event.daysOfWeek.map((day) => weekdayOptions.find((option) => option.value === day)?.label).join(', ')}
                   </p>
                 </div>
-                <button className="icon-action text-flame hover:border-flame hover:text-flame" title="Delete recurring routine" onClick={() => deleteRoutineEvent(event.id)}>
-                  <Trash2 className="h-4 w-4" />
-                </button>
+                <div className="text-right">
+                  <div className="text-3xl font-bold text-hibiscus">{streak}</div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">day streak</div>
+                </div>
               </div>
-            ))}
-          {!(data.routineEvents || []).length ? <EmptyState text="Add repeating commitments like gym, practice, or commute blocks." /> : null}
+              <p className="mt-3 text-sm text-zinc-600">{total} total completions</p>
+            </div>
+          ))}
+          {!routineStreaks.length ? <EmptyState text="Routine streaks appear after you add recurring routines." /> : null}
         </div>
       </div>
     </section>
@@ -1559,7 +1648,7 @@ function TimelineTaskBlock({ actions, style, task }: { actions?: React.ReactNode
 
   return (
     <article
-      className="absolute left-3 right-3 min-h-8 rounded-lg border border-hibiscus bg-baby/80 px-3 py-2 hover:border-flame"
+      className="absolute left-3 right-3 min-h-8 rounded-lg border border-hibiscus px-3 py-2 hover:border-flame"
       onDoubleClick={(event) => event.stopPropagation()}
       style={style}
     >
