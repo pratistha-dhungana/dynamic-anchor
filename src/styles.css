@@ -29,27 +29,27 @@ textarea {
 
 @layer components {
   .panel {
-    @apply rounded-lg border border-aura/55 bg-night p-4 shadow-glow sm:p-5;
+    @apply rounded-lg border border-aura bg-night p-4 sm:p-5;
   }
 
   .panel-compact {
-    @apply rounded-lg border border-aura/55 bg-night p-3 shadow-glow sm:p-4;
+    @apply rounded-lg border border-aura bg-night p-3 sm:p-4;
   }
 
   .btn-primary {
-    @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-hibiscus px-4 py-2 text-sm font-bold text-white transition hover:bg-flame disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-hibiscus px-4 py-2 text-sm font-bold text-white hover:bg-flame disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .btn-secondary {
-    @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-aura/70 bg-panel px-4 py-2 text-sm font-semibold text-zinc-100 transition hover:border-hibiscus hover:bg-aura/35;
+    @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-aura bg-panel px-4 py-2 text-sm font-semibold text-zinc-100 hover:border-hibiscus hover:bg-aura;
   }
 
   .tab-button {
-    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-aura/60 bg-panel px-3 py-2 text-sm font-semibold text-zinc-300 transition hover:border-hibiscus/70 hover:text-white;
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-aura bg-panel px-3 py-2 text-sm font-semibold text-zinc-300 hover:border-hibiscus hover:text-white;
   }
 
   .tab-active {
-    @apply border-hibiscus bg-indigo/45 text-white;
+    @apply border-hibiscus bg-indigo text-white;
   }
 
   .field {
@@ -57,31 +57,31 @@ textarea {
   }
 
   .input {
-    @apply w-full rounded-lg border border-aura/65 bg-ink px-3 py-2.5 text-sm text-white outline-none transition placeholder:text-zinc-600 focus:border-hibiscus focus:ring-2 focus:ring-hibiscus/15;
+    @apply w-full rounded-lg border border-aura bg-ink px-3 py-2.5 text-sm text-white outline-none placeholder:text-zinc-600 focus:border-hibiscus focus:ring-0;
   }
 
   .chip {
-    @apply rounded-full border border-aura/55 bg-panel px-2.5 py-1 font-semibold text-zinc-300;
+    @apply rounded-full border border-aura bg-panel px-2.5 py-1 font-semibold text-zinc-300;
   }
 
   .status-pill {
-    @apply rounded-full bg-hibiscus/15 px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-hibiscus;
+    @apply rounded-full bg-aura px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-white;
   }
 
   .icon-action {
-    @apply inline-flex h-9 w-9 items-center justify-center rounded-lg border border-aura/65 bg-panel text-zinc-100 transition hover:border-hibiscus hover:text-hibiscus;
+    @apply inline-flex h-9 w-9 items-center justify-center rounded-lg border border-aura bg-panel text-zinc-100 hover:border-hibiscus hover:text-hibiscus;
   }
 
   .modal-backdrop {
-    @apply fixed inset-0 z-40 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm;
+    @apply fixed inset-0 z-40 flex items-center justify-center bg-ink px-4;
   }
 
   .modal {
-    @apply w-full max-w-md rounded-lg border border-aura/65 bg-night p-5 shadow-glow;
+    @apply w-full max-w-md rounded-lg border border-aura bg-night p-5;
   }
 
   .timeline-row {
-    @apply grid grid-cols-[4rem_minmax(0,1fr)] gap-3 rounded-lg border border-aura/45 bg-panel/65 p-3 sm:grid-cols-[5rem_minmax(0,1fr)];
+    @apply grid grid-cols-[4rem_minmax(0,1fr)] gap-3 rounded-lg border border-aura bg-panel p-3 sm:grid-cols-[5rem_minmax(0,1fr)];
   }
 
   .timeline-time {
@@ -89,7 +89,7 @@ textarea {
   }
 
   .timeline-empty {
-    @apply rounded-lg border border-dashed border-aura/55 px-3 py-4 text-sm text-zinc-500 transition hover:border-hibiscus/70 hover:text-zinc-300;
+    @apply rounded-lg border border-dashed border-aura px-3 py-4 text-sm text-zinc-500 hover:border-hibiscus hover:text-zinc-300;
   }
 }
 

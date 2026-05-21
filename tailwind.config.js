@@ -16,7 +16,7 @@ export default {
         indigo: '#5848B3',
       },
       boxShadow: {
-        glow: '0 1px 0 rgba(115, 61, 111, 0.35)',
+        glow: 'none',
       },
     },
   },
