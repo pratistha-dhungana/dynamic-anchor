@@ -272,19 +272,19 @@ function App() {
     applySchedule(data);
   }
 
-  function addTask() {
-    if (!taskForm.title.trim()) return;
+  function addTaskFromForm(form: typeof emptyTask) {
+    if (!form.title.trim()) return;
 
     const task: Task = {
       id: makeId(),
-      title: taskForm.title.trim(),
-      description: taskForm.description.trim(),
-      estimateMinutes: Number(taskForm.estimateMinutes),
-      dueDate: taskForm.dueDate,
-      dueTime: taskForm.dueTime,
-      importance: taskForm.importance,
-      urgency: taskForm.urgency,
-      category: getCategory(taskForm.importance, taskForm.urgency),
+      title: form.title.trim(),
+      description: form.description.trim(),
+      estimateMinutes: Number(form.estimateMinutes),
+      dueDate: form.dueDate,
+      dueTime: form.dueTime,
+      importance: form.importance,
+      urgency: form.urgency,
+      category: getCategory(form.importance, form.urgency),
       status: 'pending',
       createdAt: new Date().toISOString(),
     };
@@ -292,8 +292,16 @@ function App() {
     setDismissedScheduleAlerts((taskIds) => taskIds.filter((taskId) => taskId !== task.id));
     const nextData = { ...data, tasks: [...data.tasks, task] };
     applySchedule(nextData, task.id);
-    setTaskForm({ ...emptyTask, dueDate: taskForm.dueDate });
+    setTaskForm({ ...emptyTask, dueDate: form.dueDate });
     if (guestMode && data.tasks.length >= 2) setShowGuestNudge(true);
+  }
+
+  function addTask() {
+    addTaskFromForm(taskForm);
+  }
+
+  function addTaskFromSchedule() {
+    addTaskFromForm({ ...taskForm, dueDate: selectedDate });
   }
 
   function openTaskEditor(task: Task) {
@@ -612,12 +620,15 @@ function App() {
             events={data.events}
             onComplete={completeTask}
             onIncomplete={markIncomplete}
+            onQuickAdd={addTaskFromSchedule}
+            onQuickFormChange={setTaskForm}
             routine={data.routine}
             selectedCompletedTasks={selectedCompletedTasks}
             selectedDate={selectedDate}
             selectedScheduledTasks={selectedScheduledTasks}
             setSelectedDate={setSelectedDate}
             scheduledTasks={scheduledTasks}
+            taskForm={taskForm}
           />
         ) : null}
 
@@ -656,22 +667,28 @@ function ScheduleView({
   events,
   onComplete,
   onIncomplete,
+  onQuickAdd,
+  onQuickFormChange,
   routine,
   selectedCompletedTasks,
   selectedDate,
   selectedScheduledTasks,
   setSelectedDate,
   scheduledTasks,
+  taskForm,
 }: {
   events: WeeklyEvent[];
   onComplete: (taskId: string) => void;
   onIncomplete: (taskId: string) => void;
+  onQuickAdd: () => void;
+  onQuickFormChange: (form: typeof emptyTask) => void;
   routine: AppData['routine'];
   selectedCompletedTasks: Task[];
   selectedDate: string;
   selectedScheduledTasks: Task[];
   setSelectedDate: (date: string) => void;
   scheduledTasks: Task[];
+  taskForm: typeof emptyTask;
 }) {
   const visibleDate = parseISO(`${selectedDate}T00:00:00`);
   const wake = dateWithTime(visibleDate, routine.wakeTime);
@@ -702,6 +719,11 @@ function ScheduleView({
             </button>
           </div>
         </div>
+        <QuickAddTask
+          form={{ ...taskForm, dueDate: selectedDate }}
+          onAdd={onQuickAdd}
+          onChange={(nextForm) => onQuickFormChange({ ...nextForm, dueDate: selectedDate })}
+        />
         <div className="mt-5 grid gap-2">
           {hours.map((hour) => {
             const nextHour = addHours(hour, 1);
@@ -741,8 +763,7 @@ function ScheduleView({
                     </div>
                   ))}
                   {hourTasks.map((task) => (
-                    <TaskCard
-                      compact
+                    <TimelineTaskBlock
                       key={task.id}
                       task={task}
                       actions={
@@ -794,6 +815,50 @@ function SummaryList({ label, tasks }: { label: string; tasks: Task[] }) {
           </div>
         ))}
         {!tasks.length ? <div className="text-sm text-zinc-500">Nothing here for this date.</div> : null}
+      </div>
+    </div>
+  );
+}
+
+function QuickAddTask({
+  form,
+  onAdd,
+  onChange,
+}: {
+  form: typeof emptyTask;
+  onAdd: () => void;
+  onChange: (form: typeof emptyTask) => void;
+}) {
+  return (
+    <div className="mt-5 rounded-lg border border-line bg-white/[0.03] p-3">
+      <div className="grid gap-3 lg:grid-cols-[1.2fr_0.9fr_0.9fr_auto] lg:items-end">
+        <Input label="Add task here" value={form.title} onChange={(title) => onChange({ ...form, title })} />
+        <EstimatedTimeInput value={form.estimateMinutes} onChange={(estimateMinutes) => onChange({ ...form, estimateMinutes })} />
+        <TimeSelect label="Due time" value={form.dueTime} onChange={(dueTime) => onChange({ ...form, dueTime })} />
+        <button className="btn-primary h-10" onClick={onAdd}>
+          <Plus className="h-4 w-4" />
+          Add
+        </button>
+      </div>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <Select
+          label="Importance"
+          value={form.importance}
+          options={[
+            ['important', 'Important'],
+            ['not-important', 'Not important'],
+          ]}
+          onChange={(importance) => onChange({ ...form, importance: importance as ImportanceLevel })}
+        />
+        <Select
+          label="Urgency"
+          value={form.urgency}
+          options={[
+            ['urgent', 'Urgent'],
+            ['not-urgent', 'Not urgent'],
+          ]}
+          onChange={(urgency) => onChange({ ...form, urgency: urgency as UrgencyLevel })}
+        />
       </div>
     </div>
   );
@@ -1068,6 +1133,28 @@ function TaskCard({ actions, compact = false, task }: { actions?: React.ReactNod
           {formatDateTime(task.scheduledStart)} to {format(parseISO(task.scheduledEnd || task.scheduledStart), 'h:mm a')}
         </div>
       ) : null}
+    </article>
+  );
+}
+
+function TimelineTaskBlock({ actions, task }: { actions?: React.ReactNode; task: Task }) {
+  const durationHeight = Math.max(34, Math.min(180, task.estimateMinutes * 2));
+
+  return (
+    <article
+      className="rounded-lg border border-blush/35 bg-blush/10 px-3 py-2 transition hover:border-blush/70"
+      style={{ minHeight: `${durationHeight}px` }}
+    >
+      <div className="flex h-full items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="break-words text-sm font-bold text-white">{task.title}</h3>
+          <p className="mt-1 text-xs font-medium text-pink-100/80">
+            {task.scheduledStart ? format(parseISO(task.scheduledStart), 'h:mm a') : 'Unscheduled'}-
+            {task.scheduledEnd ? format(parseISO(task.scheduledEnd), 'h:mm a') : ''} • {formatDuration(task.estimateMinutes)}
+          </p>
+        </div>
+        {actions ? <div className="flex shrink-0 items-center gap-1.5">{actions}</div> : null}
+      </div>
     </article>
   );
 }
