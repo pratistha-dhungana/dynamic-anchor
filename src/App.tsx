@@ -978,6 +978,9 @@ function ScheduleView({
             </button>
           </div>
         </div>
+        <p className="mt-4 rounded-lg border border-line bg-panel px-3 py-2 text-sm font-semibold text-zinc-600">
+          Double click an open spot on the calendar to add an event.
+        </p>
         <div className="mt-5 grid grid-cols-[4rem_minmax(0,1fr)] gap-3 sm:grid-cols-[5rem_minmax(0,1fr)]">
           <div className="relative" style={{ height: `${timelineHeight}px` }}>
             {hours.map((hour, index) => (
@@ -991,7 +994,7 @@ function ScheduleView({
             ))}
           </div>
           <div
-            className="relative min-w-0 overflow-hidden rounded-lg border border-line bg-night"
+            className="relative min-w-0 overflow-hidden rounded-lg border border-line bg-white"
             onDoubleClick={openEventModalFromTimeline}
             style={{ height: `${timelineHeight}px` }}
           >
@@ -1549,7 +1552,7 @@ function TimelineTaskBlock({ actions, style, task }: { actions?: React.ReactNode
 
   return (
     <article
-      className="absolute left-3 right-3 min-h-8 rounded-lg border border-hibiscus bg-baby/70 px-3 py-2 hover:border-flame"
+      className="absolute left-3 right-3 min-h-8 rounded-lg border border-hibiscus bg-baby/80 px-3 py-2 hover:border-flame"
       onDoubleClick={(event) => event.stopPropagation()}
       style={style}
     >
