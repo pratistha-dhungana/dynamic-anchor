@@ -4,12 +4,12 @@ export default {
   theme: {
     extend: {
       colors: {
-        ink: '#130D18',
-        night: '#1D1424',
-        panel: '#261B31',
-        line: '#733D6F',
+        ink: '#F0F2F5',
+        night: '#FFFFFF',
+        panel: '#F7F8FA',
+        line: '#D8DCE3',
         blush: '#EA44D4',
-        roseglass: '#33265A',
+        roseglass: '#EEF0F5',
         hibiscus: '#EA44D4',
         flame: '#DD3027',
         aura: '#733D6F',

@@ -171,7 +171,7 @@ function App() {
   const scheduledTasks = useMemo(
     () =>
       data.tasks
-        .filter((task) => task.status === 'scheduled' && task.scheduledStart)
+        .filter((task) => (task.status === 'scheduled' || task.status === 'complete') && task.scheduledStart)
         .sort((a, b) => String(a.scheduledStart).localeCompare(String(b.scheduledStart))),
     [data.tasks],
   );
@@ -264,10 +264,12 @@ function App() {
     setData(next);
   }
 
-  function applySchedule(nextData: AppData, watchedTaskId?: string) {
+  function applySchedule(nextData: AppData, watchedTaskId?: string, showAlerts = true) {
     const scheduledTasksNext = buildWeeklySchedule(nextData);
     const scheduledData = { ...nextData, tasks: scheduledTasksNext };
     updateData(scheduledData);
+
+    if (!showAlerts) return;
 
     const watchedTask = watchedTaskId
       ? scheduledTasksNext.find((task) => task.id === watchedTaskId)
@@ -374,7 +376,7 @@ function App() {
     };
 
     const nextData = { ...data, events: [...data.events, event] };
-    applySchedule(nextData);
+    applySchedule(nextData, undefined, false);
     setEventForm({ ...emptyEvent, date: eventForm.date });
     setShowEventModal(false);
   }
@@ -406,6 +408,43 @@ function App() {
     window.setTimeout(() => setShowConfetti(false), 1200);
   }
 
+  function toggleEventComplete(eventId: string) {
+    const event = data.events.find((item) => item.id === eventId);
+    const nextData = {
+      ...data,
+      events: data.events.map((item) =>
+        item.id === eventId
+          ? {
+              ...item,
+              completed: !item.completed,
+              completedAt: !item.completed ? new Date().toISOString() : undefined,
+            }
+          : item,
+      ),
+    };
+
+    updateData(nextData);
+    if (!event?.completed) {
+      setShowConfetti(true);
+      window.setTimeout(() => setShowConfetti(false), 1200);
+    }
+  }
+
+  function deleteEvent(eventId: string) {
+    const event = data.events.find((item) => item.id === eventId);
+    if (!event) return;
+
+    const confirmed = window.confirm(`Delete "${event.title}"? This cannot be undone.`);
+    if (!confirmed) return;
+
+    const nextData = {
+      ...data,
+      events: data.events.filter((item) => item.id !== eventId),
+    };
+
+    applySchedule(nextData, undefined, false);
+  }
+
   function deleteTask(taskId: string) {
     const task = data.tasks.find((item) => item.id === taskId);
     if (!task) return;
@@ -420,7 +459,31 @@ function App() {
 
     setDismissedScheduleAlerts((taskIds) => taskIds.filter((dismissedTaskId) => dismissedTaskId !== taskId));
     if (scheduleAlert?.taskId === taskId) setScheduleAlert(null);
-    applySchedule(nextData);
+    applySchedule(nextData, undefined, false);
+  }
+
+  function refitTaskToDate(taskId: string, date: string) {
+    const now = new Date();
+    const targetDate = parseISO(`${date}T00:00:00`);
+    const fallbackDueTime = isSameDay(targetDate, now) ? toTimeInputValue(minutesFromTime(format(now, 'HH:mm')) + 90) : '17:00';
+    const nextData = {
+      ...data,
+      tasks: data.tasks.map((task) =>
+        task.id === taskId
+          ? {
+              ...task,
+              dueDate: date,
+              dueTime: fallbackDueTime,
+              status: 'pending' as const,
+              scheduledStart: undefined,
+              scheduledEnd: undefined,
+            }
+          : task,
+      ),
+    };
+
+    setDismissedScheduleAlerts((taskIds) => taskIds.filter((dismissedTaskId) => dismissedTaskId !== taskId));
+    applySchedule(nextData, taskId);
   }
 
   function markIncomplete(taskId: string) {
@@ -554,7 +617,7 @@ function App() {
   const shouldAskNickname = Boolean(session && profile && !profile.nicknameAsked);
 
   return (
-    <div className="min-h-screen bg-ink text-zinc-100">
+    <div className="min-h-screen bg-ink text-zinc-800">
       <div className="fixed inset-0 bg-ink" />
       {showConfetti ? <Confetti /> : null}
       {showGuestNudge ? (
@@ -597,16 +660,16 @@ function App() {
       ) : null}
 
       <main className="relative mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-5 sm:px-6 lg:px-8">
-        <header className="flex flex-col gap-4 rounded-lg border border-aura bg-night p-4 md:flex-row md:items-center md:justify-between">
+        <header className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
             <div className="mb-2 flex items-center gap-2 text-sm font-medium text-blush">
               <Sparkles className="h-4 w-4" />
               Dynamic Anchor
             </div>
-            <h1 className="text-2xl font-bold tracking-normal text-white sm:text-3xl">
+            <h1 className="text-2xl font-bold tracking-normal text-zinc-900 sm:text-3xl">
               Welcome back, {displayName}.
             </h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-300">
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-600">
               Turn priorities into a realistic week that respects sleep, events, and the work that matters.
             </p>
             {authMessage ? <p className="mt-2 max-w-2xl text-sm font-medium text-flame">{authMessage}</p> : null}
@@ -651,8 +714,11 @@ function App() {
             events={data.events}
             onComplete={completeTask}
             onDelete={deleteTask}
+            onDeleteEvent={deleteEvent}
             onIncomplete={markIncomplete}
             onOpenEventModal={openEventModal}
+            onRefitPastDue={refitTaskToDate}
+            onToggleEventComplete={toggleEventComplete}
             pastDueTasks={pastDueTasks}
             routine={data.routine}
             selectedCompletedTasks={selectedCompletedTasks}
@@ -673,6 +739,8 @@ function App() {
             onFormChange={setTaskForm}
             pastDueTasks={pastDueTasks}
             pendingTasks={activeTasks}
+            selectedDate={selectedDate}
+            onRefitPastDue={refitTaskToDate}
           />
         ) : null}
 
@@ -695,8 +763,11 @@ function ScheduleView({
   events,
   onComplete,
   onDelete,
+  onDeleteEvent,
   onIncomplete,
   onOpenEventModal,
+  onRefitPastDue,
+  onToggleEventComplete,
   pastDueTasks,
   routine,
   selectedCompletedTasks,
@@ -708,8 +779,11 @@ function ScheduleView({
   events: WeeklyEvent[];
   onComplete: (taskId: string) => void;
   onDelete: (taskId: string) => void;
+  onDeleteEvent: (eventId: string) => void;
   onIncomplete: (taskId: string) => void;
   onOpenEventModal: (date: string, startTime: string) => void;
+  onRefitPastDue: (taskId: string, date: string) => void;
+  onToggleEventComplete: (eventId: string) => void;
   pastDueTasks: Task[];
   routine: AppData['routine'];
   selectedCompletedTasks: Task[];
@@ -773,15 +847,25 @@ function ScheduleView({
                 <div className="grid min-w-0 gap-2">
                   {routineMarkers.map((marker) => (
                     <div className="rounded-lg border border-hibiscus bg-panel p-3" key={marker.id}>
-                      <div className="font-semibold text-white">{marker.label}</div>
-                      <div className="text-xs text-zinc-300">{formatClockTime(marker.time)}</div>
+                      <div className="font-semibold text-zinc-900">{marker.label}</div>
+                      <div className="text-xs text-zinc-600">{formatClockTime(marker.time)}</div>
                     </div>
                   ))}
                   {hourEvents.map((event) => (
-                    <div className="rounded-lg border border-indigo bg-night p-3" key={event.id}>
-                      <div className="font-semibold text-white">{event.title}</div>
-                      <div className="text-xs text-zinc-300">
-                        {formatClockTime(event.startTime)}-{formatClockTime(event.endTime)}
+                    <div className="flex items-start justify-between gap-3 rounded-lg border border-indigo bg-night p-3" key={event.id}>
+                      <div className={event.completed ? 'line-through decoration-flame decoration-2' : ''}>
+                        <div className="font-semibold text-zinc-900">{event.title}</div>
+                        <div className="text-xs text-zinc-600">
+                          {formatClockTime(event.startTime)}-{formatClockTime(event.endTime)}
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 gap-2">
+                        <button className="icon-action" title="Mark event complete" onClick={() => onToggleEventComplete(event.id)}>
+                          <Check className="h-4 w-4" />
+                        </button>
+                        <button className="icon-action text-flame hover:border-flame hover:text-flame" title="Delete event" onClick={() => onDeleteEvent(event.id)}>
+                          <Trash2 className="h-4 w-4" />
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -818,7 +902,7 @@ function ScheduleView({
       </div>
 
       <aside className="grid content-start gap-3">
-        <PastDueList onDelete={onDelete} tasks={pastDueTasks} />
+        <PastDueList onDelete={onDelete} onRefit={onRefitPastDue} refitDate={selectedDate} tasks={pastDueTasks} />
         <SummaryList label="Scheduled" onDelete={onDelete} tasks={selectedScheduledTasks} />
         <SummaryList label="Completed" onDelete={onDelete} tasks={selectedCompletedTasks} />
         <EventSummaryList events={selectedEvents} />
@@ -827,22 +911,35 @@ function ScheduleView({
   );
 }
 
-function PastDueList({ onDelete, tasks }: { onDelete: (taskId: string) => void; tasks: Task[] }) {
+function PastDueList({
+  onDelete,
+  onRefit,
+  refitDate,
+  tasks,
+}: {
+  onDelete: (taskId: string) => void;
+  onRefit: (taskId: string, date: string) => void;
+  refitDate: string;
+  tasks: Task[];
+}) {
   return (
     <div className="rounded-lg border border-flame bg-night p-3 sm:p-4">
       <div className="flex items-baseline justify-between gap-3">
         <h3 className="text-sm font-semibold uppercase tracking-[0.14em] text-flame">Past due</h3>
-        <span className="text-2xl font-bold text-white">{tasks.length}</span>
+        <span className="text-2xl font-bold text-zinc-900">{tasks.length}</span>
       </div>
       <div className="mt-3 grid gap-2">
         {tasks.slice(0, 6).map((task) => (
           <div className="flex items-start justify-between gap-2 rounded-lg border border-flame bg-panel p-2.5" key={task.id}>
             <div>
-              <div className="text-sm font-semibold text-white">{task.title}</div>
-              <div className="text-xs text-zinc-300">Due {formatDue(task)}</div>
+              <div className="text-sm font-semibold text-zinc-900">{task.title}</div>
+              <div className="text-xs text-zinc-600">Due {formatDue(task)}</div>
             </div>
             <button className="icon-action text-flame hover:border-flame hover:text-flame" title="Delete task" onClick={() => onDelete(task.id)}>
               <Trash2 className="h-4 w-4" />
+            </button>
+            <button className="btn-secondary min-h-9 px-3 py-1 text-xs" onClick={() => onRefit(task.id, refitDate)}>
+              Refit here
             </button>
           </div>
         ))}
@@ -857,14 +954,14 @@ function SummaryList({ label, onDelete, tasks }: { label: string; onDelete: (tas
     <div className="panel-compact">
       <div className="flex items-baseline justify-between gap-3">
         <h3 className="text-sm font-semibold uppercase tracking-[0.14em] text-zinc-500">{label}</h3>
-        <span className="text-2xl font-bold text-white">{tasks.length}</span>
+        <span className="text-2xl font-bold text-zinc-900">{tasks.length}</span>
       </div>
       <div className="mt-3 grid gap-2">
         {tasks.slice(0, 5).map((task) => (
           <div className="flex items-start justify-between gap-2 rounded-lg border border-aura bg-panel p-2.5" key={task.id}>
             <div>
-              <div className="text-sm font-semibold text-white">{task.title}</div>
-              <div className="text-xs text-zinc-400">
+              <div className="text-sm font-semibold text-zinc-900">{task.title}</div>
+              <div className="text-xs text-zinc-500">
                 {task.scheduledStart ? format(parseISO(task.scheduledStart), 'h:mm a') : formatDateTime(task.completedAt)}
               </div>
             </div>
@@ -884,13 +981,13 @@ function EventSummaryList({ events }: { events: WeeklyEvent[] }) {
     <div className="panel-compact">
       <div className="flex items-baseline justify-between gap-3">
         <h3 className="text-sm font-semibold uppercase tracking-[0.14em] text-zinc-500">Upcoming</h3>
-        <span className="text-2xl font-bold text-white">{events.length}</span>
+        <span className="text-2xl font-bold text-zinc-900">{events.length}</span>
       </div>
       <div className="mt-3 grid gap-2">
         {events.slice(0, 5).map((event) => (
           <div className="rounded-lg border border-aura bg-panel p-2.5" key={event.id}>
-            <div className="text-sm font-semibold text-white">{event.title}</div>
-            <div className="text-xs text-zinc-400">
+            <div className="text-sm font-semibold text-zinc-900">{event.title}</div>
+            <div className="text-xs text-zinc-500">
               {formatClockTime(event.startTime)}-{formatClockTime(event.endTime)}
             </div>
           </div>
@@ -908,8 +1005,10 @@ function TaskView({
   onDelete,
   onEdit,
   onFormChange,
+  onRefitPastDue,
   pastDueTasks,
   pendingTasks,
+  selectedDate,
 }: {
   form: typeof emptyTask;
   onAdd: () => void;
@@ -917,8 +1016,10 @@ function TaskView({
   onDelete: (taskId: string) => void;
   onEdit: (task: Task) => void;
   onFormChange: (form: typeof emptyTask) => void;
+  onRefitPastDue: (taskId: string, date: string) => void;
   pastDueTasks: Task[];
   pendingTasks: Task[];
+  selectedDate: string;
 }) {
   return (
     <section className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
@@ -942,10 +1043,10 @@ function TaskView({
             <Input label="Deadline date" type="date" value={form.dueDate} onChange={(dueDate) => onFormChange({ ...form, dueDate })} />
             <TimeSelect label="Deadline time" value={form.dueTime} onChange={(dueTime) => onFormChange({ ...form, dueTime })} />
           </div>
-          <div className="rounded-lg border border-aura bg-panel p-3 text-sm text-zinc-300">
-            <strong className="text-white">Urgent</strong> means the deadline is close or the task needs attention soon.
+          <div className="rounded-lg border border-aura bg-panel p-3 text-sm text-zinc-600">
+            <strong className="text-zinc-900">Urgent</strong> means the deadline is close or the task needs attention soon.
             <br />
-            <strong className="text-white">Important</strong> means it has meaningful consequences, affects a major goal,
+            <strong className="text-zinc-900">Important</strong> means it has meaningful consequences, affects a major goal,
             is worth a lot of points, or matters long-term.
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -978,7 +1079,7 @@ function TaskView({
       <div className="panel">
         <SectionTitle eyebrow="Task Stack" title={`${pendingTasks.length} active items`} />
         <div className="mt-5 grid gap-3">
-          <PastDueList onDelete={onDelete} tasks={pastDueTasks} />
+          <PastDueList onDelete={onDelete} onRefit={onRefitPastDue} refitDate={selectedDate} tasks={pastDueTasks} />
           {pendingTasks.map((task) => (
             <TaskCard
               key={task.id}
@@ -1037,8 +1138,8 @@ function RoutineView({
             .map((event) => (
               <div className="flex items-center justify-between gap-3 rounded-lg border border-aura bg-panel p-4" key={event.id}>
                 <div>
-                  <h3 className="font-semibold text-white">{event.title}</h3>
-                  <p className="mt-1 text-sm text-zinc-400">
+                  <h3 className="font-semibold text-zinc-900">{event.title}</h3>
+                  <p className="mt-1 text-sm text-zinc-500">
                     {format(parseISO(`${event.date}T00:00:00`), 'EEE, MMM d')} • {formatClockTime(event.startTime)}-
                     {formatClockTime(event.endTime)}
                     {event.location ? ` • ${event.location}` : ''}
@@ -1059,8 +1160,8 @@ function MatrixView({ tasks }: { tasks: Task[] }) {
     <section className="grid gap-4 md:grid-cols-2">
       {categories.map((category) => (
         <div className="panel min-h-72" key={category}>
-          <h2 className="text-lg font-bold text-white">{category}</h2>
-          <p className="mt-1 text-sm text-zinc-400">{categoryHints[category]}</p>
+          <h2 className="text-lg font-bold text-zinc-900">{category}</h2>
+          <p className="mt-1 text-sm text-zinc-500">{categoryHints[category]}</p>
           <div className="mt-4 grid gap-3">
             {tasks
               .filter((task) => task.category === category)
@@ -1085,7 +1186,7 @@ function HistoryView({ onDelete, tasks }: { onDelete: (taskId: string) => void; 
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="text-xs font-bold uppercase tracking-[0.16em] text-hibiscus">Completed task</p>
-                <h3 className="mt-1 text-lg font-bold text-white">{task.title}</h3>
+                <h3 className="mt-1 text-lg font-bold text-zinc-900">{task.title}</h3>
               </div>
               <div className="flex items-center gap-2">
                 <span className="status-pill bg-indigo text-white">complete</span>
@@ -1094,8 +1195,8 @@ function HistoryView({ onDelete, tasks }: { onDelete: (taskId: string) => void; 
                 </button>
               </div>
             </div>
-            {task.description ? <p className="mt-3 text-sm leading-5 text-zinc-300">{task.description}</p> : null}
-            <p className="mt-2 text-sm text-zinc-400">
+            {task.description ? <p className="mt-3 text-sm leading-5 text-zinc-600">{task.description}</p> : null}
+            <p className="mt-2 text-sm text-zinc-500">
               Original deadline: {formatDue(task)} • Estimate: {formatDuration(task.estimateMinutes)} • Completed:{' '}
               {formatDateTime(task.completedAt)}
             </p>
@@ -1114,8 +1215,8 @@ function TaskCard({ actions, compact = false, task }: { actions?: React.ReactNod
     <article className="rounded-lg border border-aura bg-panel p-4 hover:border-hibiscus">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className={`${compact ? 'text-base' : 'text-lg'} break-words font-bold text-white`}>{task.title}</h3>
-          {description ? <p className="mt-1 text-sm leading-5 text-zinc-400">{description}</p> : null}
+          <h3 className={`${compact ? 'text-base' : 'text-lg'} break-words font-bold text-zinc-900`}>{task.title}</h3>
+          {description ? <p className="mt-1 text-sm leading-5 text-zinc-500">{description}</p> : null}
         </div>
         {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
       </div>
@@ -1136,6 +1237,7 @@ function TaskCard({ actions, compact = false, task }: { actions?: React.ReactNod
 
 function TimelineTaskBlock({ actions, task }: { actions?: React.ReactNode; task: Task }) {
   const durationHeight = Math.max(34, Math.min(180, task.estimateMinutes * 2));
+  const isComplete = task.status === 'complete';
 
   return (
     <article
@@ -1143,9 +1245,9 @@ function TimelineTaskBlock({ actions, task }: { actions?: React.ReactNode; task:
       style={{ minHeight: `${durationHeight}px` }}
     >
       <div className="flex h-full items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="break-words text-sm font-bold text-white">{task.title}</h3>
-          <p className="mt-1 text-xs font-medium text-zinc-300">
+        <div className={`min-w-0 ${isComplete ? 'line-through decoration-flame decoration-2' : ''}`}>
+          <h3 className="break-words text-sm font-bold text-zinc-900">{task.title}</h3>
+          <p className="mt-1 text-xs font-medium text-zinc-600">
             {task.scheduledStart ? format(parseISO(task.scheduledStart), 'h:mm a') : 'Unscheduled'}-
             {task.scheduledEnd ? format(parseISO(task.scheduledEnd), 'h:mm a') : ''} • {formatDuration(task.estimateMinutes)}
           </p>
@@ -1160,7 +1262,7 @@ function SectionTitle({ eyebrow, title }: { eyebrow: string; title: string }) {
   return (
     <div>
       <p className="text-xs font-bold uppercase tracking-[0.18em] text-blush">{eyebrow}</p>
-      <h2 className="mt-1 text-xl font-bold text-white">{title}</h2>
+      <h2 className="mt-1 text-xl font-bold text-zinc-900">{title}</h2>
     </div>
   );
 }
@@ -1292,8 +1394,8 @@ function GuestNudge({ onClose, onSignIn }: { onClose: () => void; onSignIn: () =
   return (
     <div className="modal-backdrop">
       <div className="modal">
-        <h2 className="text-xl font-bold text-white">Save this week across devices?</h2>
-        <p className="mt-2 text-sm leading-6 text-zinc-300">
+        <h2 className="text-xl font-bold text-zinc-900">Save this week across devices?</h2>
+        <p className="mt-2 text-sm leading-6 text-zinc-600">
           Guest work stays in this browser. Google sign-in stores your schedule with Supabase so it can follow you.
         </p>
         <div className="mt-5 flex flex-wrap gap-2">
@@ -1324,8 +1426,8 @@ function NicknameModal({
   return (
     <div className="modal-backdrop">
       <div className="modal">
-        <h2 className="text-xl font-bold text-white">Do you have a nickname?</h2>
-        <p className="mt-2 text-sm text-zinc-300">Optional. Dynamic Anchor will use it in your welcome message.</p>
+        <h2 className="text-xl font-bold text-zinc-900">Do you have a nickname?</h2>
+        <p className="mt-2 text-sm text-zinc-600">Optional. Dynamic Anchor will use it in your welcome message.</p>
         <div className="mt-4">
           <Input label="Nickname" value={value} onChange={onChange} />
         </div>
@@ -1360,8 +1462,8 @@ function EventModal({
       <div className="modal max-w-2xl">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-xl font-bold text-white">Add event</h2>
-            <p className="mt-1 text-sm text-zinc-300">
+            <h2 className="text-xl font-bold text-zinc-900">Add event</h2>
+            <p className="mt-1 text-sm text-zinc-600">
               {format(parseISO(`${eventForm.date}T00:00:00`), 'EEE, MMM d')} • {formatClockTime(eventForm.startTime)}
             </p>
           </div>
@@ -1416,10 +1518,10 @@ function ScheduleAlertModal({
       <div className="modal max-w-lg">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-xl font-bold text-white">
+            <h2 className="text-xl font-bold text-zinc-900">
               {isHighPriority ? 'This priority needs more room' : "Can't fit in schedule."}
             </h2>
-            <p className="mt-2 text-sm leading-6 text-zinc-300">
+            <p className="mt-2 text-sm leading-6 text-zinc-600">
               {isHighPriority
                 ? `${task?.title || 'This high priority task'} cannot fit before its deadline with the current routine and events.`
                 : `${task?.title || 'This activity'} cannot fit into the remaining available time before its deadline.`}
@@ -1432,7 +1534,7 @@ function ScheduleAlertModal({
 
         {isHighPriority ? (
           <div className="mt-5 grid gap-2 rounded-lg border border-aura bg-panel p-3">
-            <p className="text-sm text-zinc-300">Since this is future planning, you can make more room:</p>
+            <p className="text-sm text-zinc-600">Since this is future planning, you can make more room:</p>
             <button className="btn-primary justify-center" onClick={() => onWakeEarlier(alert.taskId)}>
               Wake up 1 hour earlier
             </button>
@@ -1471,8 +1573,8 @@ function TaskEditModal({
       <div className="modal max-w-2xl">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-xl font-bold text-white">Edit task</h2>
-            <p className="mt-1 text-sm text-zinc-300">Changes will refit this item into the weekly schedule.</p>
+            <h2 className="text-xl font-bold text-zinc-900">Edit task</h2>
+            <p className="mt-1 text-sm text-zinc-600">Changes will refit this item into the weekly schedule.</p>
           </div>
           <button className="icon-action" title="Close" onClick={onClose}>
             <X className="h-4 w-4" />

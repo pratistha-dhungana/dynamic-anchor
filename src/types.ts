@@ -20,6 +20,8 @@ export interface WeeklyEvent {
   startTime: string;
   endTime: string;
   location?: string;
+  completed?: boolean;
+  completedAt?: string;
 }
 
 export interface Task {
